@@ -1,0 +1,6 @@
+{
+  "name": "lerp",
+  "version": "1.0.0",
+  "main": "./lerp.ts",
+  "license": "MIT"
+}
