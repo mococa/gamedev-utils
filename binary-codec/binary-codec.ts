@@ -270,6 +270,102 @@ export class BinaryPrimitives {
       };
     },
   };
+
+  /** 32-bit floating point number (IEEE 754, little-endian) */
+  static readonly f32_le: Field<number> = {
+    size: 4,
+    write: (dv, o, v) => dv.setFloat32(o, v, true),
+    read: (dv, o) => dv.getFloat32(o, true),
+  };
+
+  /** 64-bit floating point number (double, little-endian) */
+  static readonly f64_le: Field<number> = {
+    size: 8,
+    write: (dv, o, v) => dv.setFloat64(o, v, true),
+    read: (dv, o) => dv.getFloat64(o, true),
+  };
+
+  /** Unsigned 16-bit integer (little-endian) */
+  static readonly u16_le: Field<number> = {
+    size: 2,
+    write: (dv, o, v) => dv.setUint16(o, v, true),
+    read: (dv, o) => dv.getUint16(o, true),
+  };
+
+  /** Unsigned 32-bit integer (little-endian) */
+  static readonly u32_le: Field<number> = {
+    size: 4,
+    write: (dv, o, v) => dv.setUint32(o, v, true),
+    read: (dv, o) => dv.getUint32(o, true),
+  };
+
+  /** Signed 16-bit integer (little-endian) */
+  static readonly i16_le: Field<number> = {
+    size: 2,
+    write: (dv, o, v) => dv.setInt16(o, v, true),
+    read: (dv, o) => dv.getInt16(o, true),
+  };
+
+  /** Signed 32-bit integer (little-endian) */
+  static readonly i32_le: Field<number> = {
+    size: 4,
+    write: (dv, o, v) => dv.setInt32(o, v, true),
+    read: (dv, o) => dv.getInt32(o, true),
+  };
+
+  /**
+   * 2D vector of f32 stored as a tuple [x, y] (little-endian).
+   * Useful for compact math data or shader-friendly layouts.
+   */
+  static readonly vec2_le: Field<[number, number]> = {
+    size: 8,
+    write: (dv, o, v) => {
+      dv.setFloat32(o, v[0], true);
+      dv.setFloat32(o + 4, v[1], true);
+    },
+    read: (dv, o) => [
+      dv.getFloat32(o, true),
+      dv.getFloat32(o + 4, true),
+    ],
+  };
+
+  /**
+   * 3D vector of f32 stored as a tuple [x, y, z] (little-endian).
+   * Commonly used for positions, velocities, or directions.
+   */
+  static readonly vec3_le: Field<[number, number, number]> = {
+    size: 12,
+    write: (dv, o, v) => {
+      dv.setFloat32(o, v[0], true);
+      dv.setFloat32(o + 4, v[1], true);
+      dv.setFloat32(o + 8, v[2], true);
+    },
+    read: (dv, o) => [
+      dv.getFloat32(o, true),
+      dv.getFloat32(o + 4, true),
+      dv.getFloat32(o + 8, true),
+    ],
+  };
+
+  /**
+   * 4D vector of f32 stored as a tuple [x, y, z, w] (little-endian).
+   * Useful for quaternions, colors in shaders, or homogeneous coordinates.
+   */
+  static readonly vec4_le: Field<[number, number, number, number]> = {
+    size: 16,
+    write: (dv, o, v) => {
+      dv.setFloat32(o, v[0], true);
+      dv.setFloat32(o + 4, v[1], true);
+      dv.setFloat32(o + 8, v[2], true);
+      dv.setFloat32(o + 12, v[3], true);
+    },
+    read: (dv, o) => [
+      dv.getFloat32(o, true),
+      dv.getFloat32(o + 4, true),
+      dv.getFloat32(o + 8, true),
+      dv.getFloat32(o + 12, true),
+    ],
+  };
 }
 
 /**
