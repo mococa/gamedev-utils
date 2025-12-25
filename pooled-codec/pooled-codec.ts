@@ -48,8 +48,17 @@ export class PooledDecoder<T extends object> {
    * @param schema Schema or record describing the object structure.
    * @param initial Initial object used as template for pooling.
    */
-  constructor(private schema: Schema<T> | Record<string, any>, initial: T) {
-    this.pool = new ObjectPool(() => ({ ...initial }));
+  constructor(private schema: Schema<T> | Record<string, any>) {
+    this.pool = new ObjectPool(() => this.createNil());
+  }
+
+  private createNil(): T {
+    const obj = {} as T;
+    for (const key of Object.keys(this.schema) as (keyof T)[]) {
+      const field = (this.schema as any)[key];
+      obj[key] = "toNil" in field ? field.toNil() : undefined;
+    }
+    return obj;
   }
 
   /**
@@ -101,8 +110,8 @@ export class PooledArrayDecoder<T extends object> {
    * @param schema Schema or record describing object structure.
    * @param initial Initial object used as template for pooling.
    */
-  constructor(schema: Schema<T> | Record<string, any>, initial: T) {
-    this.pooledDecoder = new PooledDecoder(schema, initial);
+  constructor(schema: Schema<T> | Record<string, any>) {
+    this.pooledDecoder = new PooledDecoder(schema);
   }
 
   /**
@@ -197,9 +206,9 @@ export class PooledCodec<T> {
    * @param schema Schema describing the object structure.
    * @param initial Initial object used as a template for pooling decoded objects.
    */
-  constructor(schema: Schema<T>, initial: T) {
+  constructor(schema: Schema<T>) {
     this.encoder = new PooledEncoder(schema);
-    this.decoder = new PooledDecoder(schema, initial);
+    this.decoder = new PooledDecoder(schema);
   }
 
   /**
