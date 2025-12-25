@@ -17,8 +17,8 @@ import { IntentTracker, Reconciliator } from './prediction';
 
 ```ts
 const positionRecon = new Reconciliator<MoveIntent, PositionSnapshot>({
-  onLoadState: (state) => gameClient.setPositions(state),
-  onReplay: (intents) => intents.forEach((i) => gameClient.applyMove(i)),
+  onLoadState: (state) => gameClient.setPositions(state), // rewind to server-authoritative state
+  onReplay: (remainingIntents) => remainingIntents.forEach((i) => gameClient.applyMove(i)), // replay remaining unconfirmed intents
 });
 
 const ticker = new FixedTicker({
