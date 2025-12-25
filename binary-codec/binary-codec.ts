@@ -21,6 +21,11 @@ export type Field<T> = {
    * @param o Byte offset
    */
   read(dv: DataView, o: number): T;
+
+  /**
+   * Returns the nil value
+   */
+  toNil(): T;
 };
 
 /**
@@ -140,6 +145,7 @@ export class BinaryPrimitives {
     size: 1,
     write: (dv, o, v) => dv.setUint8(o, v),
     read: (dv, o) => dv.getUint8(o),
+    toNil: () => 0,
   };
 
   /** Unsigned 16-bit integer (big-endian) */
@@ -147,6 +153,7 @@ export class BinaryPrimitives {
     size: 2,
     write: (dv, o, v) => dv.setUint16(o, v, false),
     read: (dv, o) => dv.getUint16(o, false),
+    toNil: () => 0,
   };
 
   /** Unsigned 32-bit integer (big-endian) */
@@ -154,6 +161,7 @@ export class BinaryPrimitives {
     size: 4,
     write: (dv, o, v) => dv.setUint32(o, v, false),
     read: (dv, o) => dv.getUint32(o, false),
+    toNil: () => 0,
   };
 
   /** Signed 8-bit integer */
@@ -161,6 +169,7 @@ export class BinaryPrimitives {
     size: 1,
     write: (dv, o, v) => dv.setInt8(o, v),
     read: (dv, o) => dv.getInt8(o),
+    toNil: () => 0,
   };
 
   /** Signed 16-bit integer (big-endian) */
@@ -168,6 +177,7 @@ export class BinaryPrimitives {
     size: 2,
     write: (dv, o, v) => dv.setInt16(o, v, false),
     read: (dv, o) => dv.getInt16(o, false),
+    toNil: () => 0,
   };
 
   /** Signed 32-bit integer (big-endian) */
@@ -175,6 +185,7 @@ export class BinaryPrimitives {
     size: 4,
     write: (dv, o, v) => dv.setInt32(o, v, false),
     read: (dv, o) => dv.getInt32(o, false),
+    toNil: () => 0,
   };
 
   /** 32-bit floating point number (IEEE 754, big-endian) */
@@ -182,6 +193,7 @@ export class BinaryPrimitives {
     size: 4,
     write: (dv, o, v) => dv.setFloat32(o, v, false),
     read: (dv, o) => dv.getFloat32(o, false),
+    toNil: () => 0,
   };
 
   /** 64-bit floating point number (double, big-endian) */
@@ -189,6 +201,7 @@ export class BinaryPrimitives {
     size: 8,
     write: (dv, o, v) => dv.setFloat64(o, v, false),
     read: (dv, o) => dv.getFloat64(o, false),
+    toNil: () => 0,
   };
 
   /** Boolean stored as 1 byte (0 = false, 1 = true) */
@@ -196,6 +209,7 @@ export class BinaryPrimitives {
     size: 1,
     write: (dv, o, v) => dv.setUint8(o, v ? 1 : 0),
     read: (dv, o) => dv.getUint8(o) !== 0,
+    toNil: () => false,
   };
 
   /**
@@ -220,6 +234,7 @@ export class BinaryPrimitives {
         for (let i = 0; i < length; i++) bytes[i] = dv.getUint8(o + 2 + i);
         return new TextDecoder().decode(bytes);
       },
+      toNil: () => "",
     };
   }
 
@@ -233,6 +248,7 @@ export class BinaryPrimitives {
     read(dv, o) {
       return { x: dv.getFloat32(o, false), y: dv.getFloat32(o + 4, false) };
     },
+    toNil: () => ({ x: 0, y: 0 }),
   };
 
   /** 3D vector of f32 (x, y, z) */
@@ -250,6 +266,7 @@ export class BinaryPrimitives {
         z: dv.getFloat32(o + 8, false),
       };
     },
+    toNil: () => ({ x: 0, y: 0, z: 0 }),
   };
 
   /** RGBA color packed as 4 u8 bytes */
@@ -269,6 +286,7 @@ export class BinaryPrimitives {
         a: dv.getUint8(o + 3),
       };
     },
+    toNil: () => ({ r: 0, g: 0, b: 0, a: 0 }),
   };
 
   /** 32-bit floating point number (IEEE 754, little-endian) */
@@ -276,6 +294,7 @@ export class BinaryPrimitives {
     size: 4,
     write: (dv, o, v) => dv.setFloat32(o, v, true),
     read: (dv, o) => dv.getFloat32(o, true),
+    toNil: () => 0,
   };
 
   /** 64-bit floating point number (double, little-endian) */
@@ -283,6 +302,7 @@ export class BinaryPrimitives {
     size: 8,
     write: (dv, o, v) => dv.setFloat64(o, v, true),
     read: (dv, o) => dv.getFloat64(o, true),
+    toNil: () => 0,
   };
 
   /** Unsigned 16-bit integer (little-endian) */
@@ -290,6 +310,7 @@ export class BinaryPrimitives {
     size: 2,
     write: (dv, o, v) => dv.setUint16(o, v, true),
     read: (dv, o) => dv.getUint16(o, true),
+    toNil: () => 0,
   };
 
   /** Unsigned 32-bit integer (little-endian) */
@@ -297,6 +318,7 @@ export class BinaryPrimitives {
     size: 4,
     write: (dv, o, v) => dv.setUint32(o, v, true),
     read: (dv, o) => dv.getUint32(o, true),
+    toNil: () => 0,
   };
 
   /** Signed 16-bit integer (little-endian) */
@@ -304,6 +326,7 @@ export class BinaryPrimitives {
     size: 2,
     write: (dv, o, v) => dv.setInt16(o, v, true),
     read: (dv, o) => dv.getInt16(o, true),
+    toNil: () => 0,
   };
 
   /** Signed 32-bit integer (little-endian) */
@@ -311,6 +334,7 @@ export class BinaryPrimitives {
     size: 4,
     write: (dv, o, v) => dv.setInt32(o, v, true),
     read: (dv, o) => dv.getInt32(o, true),
+    toNil: () => 0,
   };
 
   /**
@@ -327,6 +351,7 @@ export class BinaryPrimitives {
       dv.getFloat32(o, true),
       dv.getFloat32(o + 4, true),
     ],
+    toNil: () => [0, 0],
   };
 
   /**
@@ -345,6 +370,7 @@ export class BinaryPrimitives {
       dv.getFloat32(o + 4, true),
       dv.getFloat32(o + 8, true),
     ],
+    toNil: () => [0, 0, 0],
   };
 
   /**
@@ -365,6 +391,7 @@ export class BinaryPrimitives {
       dv.getFloat32(o + 8, true),
       dv.getFloat32(o + 12, true),
     ],
+    toNil: () => [0, 0, 0, 0],
   };
 }
 
