@@ -25,11 +25,15 @@
  *   intentRegistry: new IntentRegistry(),
  * });
  *
- * // Per-peer snapshot registries
- * server.onConnection((peerId) => {
- *   const registry = new SnapshotRegistry();
- *   registry.register('GameState', gameStateCodec);
- *   server.registerPeerSnapshotRegistry(peerId, registry);
+ * // Per-peer snapshot registry factory
+ * const server = new ServerNetwork({
+ *   transport,
+ *   intentRegistry: new IntentRegistry(),
+ *   createPeerSnapshotRegistry: () => {
+ *     const registry = new SnapshotRegistry();
+ *     registry.register('GameState', gameStateCodec);
+ *     return registry;
+ *   }
  * });
  *
  * // Handle intents

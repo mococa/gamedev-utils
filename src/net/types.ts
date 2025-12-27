@@ -5,10 +5,21 @@
 /**
  * Generic transport adapter interface - implement this to support any transport layer
  * (WebSocket, WebRTC, UDP, Socket.io, etc.)
+ *
+ * IMPORTANT: Implementations MUST copy the data buffer if they need to hold a reference
+ * after send() returns. The caller may reuse/mutate the buffer immediately after send()
+ * completes (for buffer pooling optimization).
  */
 export interface TransportAdapter {
 	/**
-	 * Send binary data through the transport
+	 * Send binary data through the transport.
+	 *
+	 * CRITICAL: You MUST copy the buffer if your transport will access it after
+	 * this method returns (e.g., in async operations, queues, or callbacks).
+	 * The caller may reuse this buffer immediately after send() completes.
+	 *
+	 * WebSocket transports (Bun, browser) copy automatically and are safe.
+	 * Custom transports MUST explicitly copy: `new Uint8Array(data)`
 	 */
 	send(data: Uint8Array): void | Promise<void>;
 
@@ -128,6 +139,10 @@ export interface NetworkConfig {
 
 	/**
 	 * Enable buffer pooling for message wrapping (default: true)
+	 *
+	 * IMPORTANT: Only enable if your transport copies buffers synchronously in send().
+	 * WebSocket transports (Bun, browser) are safe. Custom transports that queue
+	 * buffers internally MUST copy the buffer before queuing.
 	 */
 	enableBufferPooling?: boolean;
 

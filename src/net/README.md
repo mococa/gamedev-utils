@@ -101,19 +101,17 @@ const transport = BunWebSocketServerTransport.create(3000);
 const intentRegistry = new IntentRegistry();
 intentRegistry.register(IntentKind.Move, MoveIntent.codec);
 
-// Create server
+// Create server with per-peer snapshot registry factory
 const server = new ServerNetwork({
   transport,
   intentRegistry,
+  createPeerSnapshotRegistry: () => {
+    // Factory called for each new peer connection
+    const registry = new SnapshotRegistry();
+    registry.register('GameState', GameStateCodec);
+    return registry;
+  },
   config: { debug: true }
-});
-
-// Setup per-peer snapshot registries
-server.onConnection((peerId) => {
-  // Each peer gets their own snapshot registry!
-  const registry = new SnapshotRegistry();
-  registry.register('GameState', GameStateCodec);
-  server.registerPeerSnapshotRegistry(peerId, registry);
 });
 
 // Handle intents
@@ -171,9 +169,11 @@ client.sendIntent({
 
 ## Per-Peer Snapshot Registries
 
-The killer feature! Each peer can have a **different snapshot registry**, enabling powerful optimizations:
+The killer feature! Each peer automatically gets their own snapshot registry via the factory function, enabling powerful optimizations:
 
-### Fog of War
+### Fog of War (Runtime Filtering)
+
+Use `broadcastSnapshotWithCustomization` to filter data per-peer at runtime:
 
 ```typescript
 server.broadcastSnapshotWithCustomization('GameState', baseSnapshot, (peerId, snapshot) => {
@@ -194,32 +194,37 @@ server.broadcastSnapshotWithCustomization('GameState', baseSnapshot, (peerId, sn
 });
 ```
 
-### Interest Management
+### Platform-Specific Encoding (Factory Pattern)
+
+Different clients can use different codecs by customizing the factory:
 
 ```typescript
-// Player A sees detailed info about nearby players
-const nearbyRegistry = new SnapshotRegistry();
-nearbyRegistry.register('Player', DetailedPlayerCodec); // More data
+const server = new ServerNetwork({
+  transport,
+  intentRegistry,
+  createPeerSnapshotRegistry: () => {
+    // You could inspect peer metadata here to decide which codec to use
+    const registry = new SnapshotRegistry();
 
-// Player B sees simplified info about distant players
-const distantRegistry = new SnapshotRegistry();
-distantRegistry.register('Player', SimplePlayerCodec); // Less data
+    // All peers use same codec by default
+    // For different codecs per peer, use peer metadata and create
+    // registries conditionally in the factory
+    registry.register('GameState', GameStateCodec);
+    return registry;
+  },
+});
 
-server.registerPeerSnapshotRegistry('playerA', nearbyRegistry);
-server.registerPeerSnapshotRegistry('playerB', distantRegistry);
+// To customize per-peer, set metadata on connection:
+server.onConnection((peerId) => {
+  const userAgent = /* get from transport metadata */;
+  server.setPeerMetadata(peerId, 'platform', userAgent.includes('Mobile') ? 'mobile' : 'desktop');
+
+  // Then in factory, check metadata (note: factory runs before onConnection)
+  // So you'd need to create registries lazily or use customization method
+});
 ```
 
-### Platform-Specific Encoding
-
-```typescript
-// Mobile clients get more compressed snapshots
-const mobileRegistry = new SnapshotRegistry();
-mobileRegistry.register('GameState', CompressedGameStateCodec);
-
-// Desktop clients get full precision
-const desktopRegistry = new SnapshotRegistry();
-desktopRegistry.register('GameState', FullGameStateCodec);
-```
+**Note**: The factory runs once per peer automatically. For truly dynamic per-peer codecs, use `broadcastSnapshotWithCustomization` to filter/transform data at send time.
 
 ## Creating Custom Transports
 
@@ -296,12 +301,18 @@ This allows the layer to automatically route messages without requiring separate
 constructor(config: {
   transport: ServerTransportAdapter<TPeer>;
   intentRegistry: IntentRegistry;
+  createPeerSnapshotRegistry: () => SnapshotRegistry<TSnapshots>;
   config?: NetworkConfig;
 })
 ```
 
+**Parameters**:
+- `transport`: Server transport adapter for connection management
+- `intentRegistry`: Registry for decoding client intents
+- `createPeerSnapshotRegistry`: Factory function called once per new peer to create their snapshot registry
+- `config`: Optional network configuration (debug, rate limits, buffer pooling, etc.)
+
 #### Methods
-- `registerPeerSnapshotRegistry(peerId: string, registry: SnapshotRegistry)` - Register per-peer snapshot registry
 - `onIntent(kind: number, handler: (peerId: string, intent: unknown) => void)` - Handle specific intent type
 - `onConnection(handler: (peerId: string) => void)` - Handle new connections
 - `onDisconnection(handler: (peerId: string) => void)` - Handle disconnections
@@ -345,13 +356,14 @@ See [examples/multiplayer-game.ts](../../examples/multiplayer-game.ts) for a com
 
 ## Best Practices
 
-1. **Always use per-peer snapshot registries** - Register them in `onConnection`
-2. **Keep snapshots small** - Only send delta updates
-3. **Use fog of war** - Don't send data players can't see
-4. **Handle disconnections** - Clean up peer state and registries
-5. **Rate limit snapshots** - Don't send faster than clients can process (typically 20-60 Hz)
-6. **Validate intents** - Always sanitize/validate data from clients
+1. **Provide a snapshot registry factory** - Required parameter in ServerNetwork constructor
+2. **Keep snapshots small** - Only send delta updates (use `Partial<T>` for snapshot.updates)
+3. **Use fog of war** - Filter data with `broadcastSnapshotWithCustomization`
+4. **Handle disconnections** - Clean up game state in `onDisconnection` handlers (registries auto-cleaned)
+5. **Rate limit snapshots** - Typical game tick rates: 10-25 Hz (don't exceed 60Hz)
+6. **Validate intents** - Always sanitize/validate data from clients (see validators)
 7. **Use tick numbers** - Include tick in intents for prediction/rollback
+8. **Transport buffer copying** - Custom transports MUST copy buffers in `send()` if queuing internally
 
 ## Performance Tips
 
@@ -362,12 +374,22 @@ See [examples/multiplayer-game.ts](../../examples/multiplayer-game.ts) for a com
 - Consider different update rates for different data (e.g., position vs. health)
 - Profile your snapshot sizes - aim for < 1KB per snapshot
 
+## Current Features
+
+Already implemented:
+- ✅ Message priority/ordering (priority queue with backpressure)
+- ✅ Bandwidth tracking (per-peer bandwidth monitoring)
+- ✅ Rate limiting (configurable maxMessagesPerSecond)
+- ✅ Buffer pooling (zero-copy message wrapping)
+- ✅ Heartbeat/timeout detection (automatic disconnection)
+- ✅ Intent validators (composable validation)
+
 ## Future Enhancements
 
 Potential additions:
 - Reliable message channels (with acks/retries)
-- Message priority/ordering
-- Bandwidth monitoring
-- Automatic compression
-- Latency measurement
+- Automatic compression (LZ4/Zstd)
+- Latency measurement (RTT tracking)
 - Built-in lag compensation helpers
+- Delta compression for snapshots
+- Connection migration/reconnection

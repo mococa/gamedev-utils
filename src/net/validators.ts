@@ -6,8 +6,27 @@ import type { Intent } from "../protocol/intent/intent";
 
 /**
  * Validate that intent tick is not in the past (with tolerance for network lag)
+ *
+ * NOTE: Pass the current tick value at the time you create the validator.
+ * If your tick advances, you'll need to recreate the validator or use a function
+ * that captures the current tick dynamically.
+ *
  * @param currentTick Current server tick
  * @param tolerance Number of ticks to allow in the past (default: 10)
+ *
+ * @example
+ * ```ts
+ * // Option 1: Recreate validator each tick (simple but allocates)
+ * function onTick(currentTick: number) {
+ *   const validator = validateTickNotTooOld(currentTick);
+ *   // use validator...
+ * }
+ *
+ * // Option 2: Manual validation (zero allocation)
+ * if (intent.tick >= currentTick - 10) {
+ *   // intent is valid
+ * }
+ * ```
  */
 export function validateTickNotTooOld(currentTick: number, tolerance: number = 10) {
 	return <T extends Intent>(_peerId: string, intent: T): boolean => {
