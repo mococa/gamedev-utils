@@ -38,6 +38,17 @@ import { FixedTicker } from 'murow/core';
 - `PooledCodec`: Object-pooled binary codec
 - `IntentTracker` & `Reconciliator`: Client-side prediction
 
+### Protocol Layer
+Minimalist networking primitives:
+- `IntentRegistry`: Type-safe intent codec registry
+- `SnapshotCodec`: Binary encoding for state deltas
+- `Snapshot<T>`: Delta-based state updates
+- `applySnapshot()`: Deep merge snapshots into state
+
+Works harmoniously with core utilities (`FixedTicker`, `IntentTracker`, `Reconciliator`).
+
+See [Protocol Layer Documentation](./src/protocol/README.md) for usage.
+
 ## Building
 
 ```bash
