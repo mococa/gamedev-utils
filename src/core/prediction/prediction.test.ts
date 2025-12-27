@@ -178,7 +178,7 @@ describe("Reconciliator", () => {
     reconciliator.onSnapshot(snapshot);
 
     // Should load state
-    expect(loadedState).toEqual({ x: 10, y: 20, health: 100 });
+    expect(loadedState!).toEqual({ x: 10, y: 20, health: 100 });
 
     // Should replay only intent at tick 3 (after tick 2)
     expect(replayedIntents).toEqual([{ dx: -1, dy: 0 }]);
@@ -296,7 +296,7 @@ describe("Reconciliator", () => {
       state: { x: 50, y: 50, health: 100 },
     });
 
-    expect(replayedIntents).toEqual([]);
+    expect(replayedIntents!).toEqual([]);
   });
 
   test("should work with complex intent types", () => {
@@ -335,7 +335,7 @@ describe("Reconciliator", () => {
       },
     });
 
-    expect(capturedState).toEqual({
+    expect(capturedState!).toEqual({
       position: { x: 5, y: 5 },
       inventory: ["sword", "shield"],
     });
