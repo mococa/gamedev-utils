@@ -5,6 +5,11 @@ export type Obstacle =
   | RectObstacle
   | PolygonObstacle;
 
+export type ObstacleInput =
+  | Omit<CircleObstacle, 'id'>
+  | Omit<RectObstacle, 'id'>
+  | Omit<PolygonObstacle, 'id'>;
+
 interface Vec2 {
   x: number;
   y: number;
@@ -452,7 +457,7 @@ class Obstacles {
   dirty = true;
   version = 0;
 
-  add(obstacle: Omit<Obstacle, 'id'>): ObstacleId {
+  add(obstacle: ObstacleInput): ObstacleId {
     const id = genId();
     const newObstacle = { ...obstacle, id } as Obstacle;
     this.items.set(id, newObstacle);
@@ -699,7 +704,7 @@ export class NavMesh {
    * Adds an obstacle and returns its unique ID.
    * For polygons: ensure points are defined relative to (0,0).
    */
-  addObstacle(obstacle: Omit<Obstacle, 'id'>): ObstacleId {
+  addObstacle(obstacle: ObstacleInput): ObstacleId {
     return this.obstacles.add(obstacle);
   }
 

@@ -27,7 +27,7 @@
     "build:types": "tsc --project tsconfig.json",
     "dev": "npm run build:js -- --watch",
     "prepublishOnly": "npm run build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "bun test"
   },
   "keywords": [
     "game-engine",
@@ -47,6 +47,7 @@
     "url": "https://github.com/mococa/murow/issues"
   },
   "devDependencies": {
+    "@types/bun": "^1.1.16",
     "esbuild": "^0.19.0",
     "typescript": "^5.0.0"
   }
