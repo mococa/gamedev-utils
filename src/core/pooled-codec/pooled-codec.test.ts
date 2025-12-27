@@ -347,3 +347,340 @@ describe("PooledCodec - Memory Efficiency", () => {
     objects.forEach((obj, i) => expect(obj.id).toBe(i));
   });
 });
+
+describe("PooledCodec.array", () => {
+  test("should encode and decode arrays of objects", () => {
+    const PlayerSchema = {
+      entityId: BinaryPrimitives.u32,
+      x: BinaryPrimitives.f32,
+      y: BinaryPrimitives.f32,
+    } satisfies Schema<{ entityId: number; x: number; y: number }>;
+
+    const UpdateSchema = {
+      tick: BinaryPrimitives.u32,
+      players: PooledCodec.array(PlayerSchema),
+    };
+
+    const codec = new PooledCodec(UpdateSchema);
+
+    // Encode
+    const buffer = codec.encode({
+      tick: 42,
+      players: [
+        { entityId: 1, x: 10.5, y: 20.5 },
+        { entityId: 2, x: 30.5, y: 40.5 },
+      ],
+    });
+
+    // Decode
+    const snapshot = codec.decode(buffer);
+
+    expect(snapshot.tick).toBe(42);
+    expect(snapshot.players.length).toBe(2);
+    expect(snapshot.players[0].entityId).toBe(1);
+    expect(snapshot.players[0].x).toBeCloseTo(10.5, 5);
+    expect(snapshot.players[0].y).toBeCloseTo(20.5, 5);
+    expect(snapshot.players[1].entityId).toBe(2);
+    expect(snapshot.players[1].x).toBeCloseTo(30.5, 5);
+    expect(snapshot.players[1].y).toBeCloseTo(40.5, 5);
+  });
+
+  test("should handle empty arrays", () => {
+    const ItemSchema = {
+      id: BinaryPrimitives.u32,
+    } satisfies Schema<{ id: number }>;
+
+    const UpdateSchema = {
+      tick: BinaryPrimitives.u16,
+      items: PooledCodec.array(ItemSchema),
+    };
+
+    const codec = new PooledCodec(UpdateSchema);
+
+    // Encode with empty array
+    const buffer = codec.encode({
+      tick: 100,
+      items: [],
+    });
+
+    // Decode
+    const snapshot = codec.decode(buffer);
+
+    expect(snapshot.tick).toBe(100);
+    expect(snapshot.items).toEqual([]);
+  });
+
+  test("should handle arrays with many items", () => {
+    const PositionSchema = {
+      x: BinaryPrimitives.f32,
+      y: BinaryPrimitives.f32,
+    } satisfies Schema<{ x: number; y: number }>;
+
+    const UpdateSchema = {
+      positions: PooledCodec.array(PositionSchema),
+    };
+
+    const codec = new PooledCodec(UpdateSchema);
+
+    // Create 100 positions
+    const positions = Array.from({ length: 100 }, (_, i) => ({
+      x: i * 1.5,
+      y: i * 2.5,
+    }));
+
+    // Encode
+    const buffer = codec.encode({ positions });
+
+    // Decode
+    const snapshot = codec.decode(buffer);
+
+    expect(snapshot.positions.length).toBe(100);
+    for (let i = 0; i < 100; i++) {
+      expect(snapshot.positions[i].x).toBeCloseTo(i * 1.5, 5);
+      expect(snapshot.positions[i].y).toBeCloseTo(i * 2.5, 5);
+    }
+  });
+
+  test("should work with multiple array fields", () => {
+    const PlayerSchema = {
+      id: BinaryPrimitives.u32,
+      health: BinaryPrimitives.u8,
+    } satisfies Schema<{ id: number; health: number }>;
+
+    const EnemySchema = {
+      id: BinaryPrimitives.u32,
+      type: BinaryPrimitives.u8,
+    } satisfies Schema<{ id: number; type: number }>;
+
+    const UpdateSchema = {
+      tick: BinaryPrimitives.u32,
+      players: PooledCodec.array(PlayerSchema),
+      enemies: PooledCodec.array(EnemySchema),
+    };
+
+    const codec = new PooledCodec(UpdateSchema);
+
+    // Encode
+    const buffer = codec.encode({
+      tick: 50,
+      players: [
+        { id: 1, health: 100 },
+        { id: 2, health: 75 },
+      ],
+      enemies: [
+        { id: 10, type: 1 },
+        { id: 11, type: 2 },
+        { id: 12, type: 1 },
+      ],
+    });
+
+    // Decode
+    const snapshot = codec.decode(buffer);
+
+    expect(snapshot.tick).toBe(50);
+    expect(snapshot.players.length).toBe(2);
+    expect(snapshot.players[0]).toEqual({ id: 1, health: 100 });
+    expect(snapshot.players[1]).toEqual({ id: 2, health: 75 });
+    expect(snapshot.enemies.length).toBe(3);
+    expect(snapshot.enemies[0]).toEqual({ id: 10, type: 1 });
+    expect(snapshot.enemies[1]).toEqual({ id: 11, type: 2 });
+    expect(snapshot.enemies[2]).toEqual({ id: 12, type: 1 });
+  });
+});
+
+describe("PooledCodec - Zero-Copy Encoding", () => {
+  test("calculateSize should return correct size for simple schema", () => {
+    const schema = {
+      id: BinaryPrimitives.u32,
+      x: BinaryPrimitives.f32,
+      y: BinaryPrimitives.f32,
+    };
+
+    const codec = new PooledCodec(schema);
+    const data = { id: 1, x: 10.5, y: 20.5 };
+
+    const size = codec.calculateSize(data);
+    expect(size).toBe(4 + 4 + 4); // u32 + f32 + f32 = 12 bytes
+  });
+
+  test("calculateSize should return correct size for schema with arrays", () => {
+    const PlayerSchema = {
+      entityId: BinaryPrimitives.u32,
+      x: BinaryPrimitives.f32,
+      y: BinaryPrimitives.f32,
+    };
+
+    const UpdateSchema = {
+      tick: BinaryPrimitives.u32,
+      players: PooledCodec.array(PlayerSchema),
+    };
+
+    const codec = new PooledCodec(UpdateSchema);
+    const data = {
+      tick: 42,
+      players: [
+        { entityId: 1, x: 10.5, y: 20.5 },
+        { entityId: 2, x: 30.5, y: 40.5 },
+      ],
+    };
+
+    const size = codec.calculateSize(data);
+    // tick(4) + array_length(2) + 2 * (entityId(4) + x(4) + y(4))
+    expect(size).toBe(4 + 2 + 2 * 12); // 30 bytes
+  });
+
+  test("encodeInto should write directly to buffer without allocations", () => {
+    const schema = {
+      id: BinaryPrimitives.u32,
+      value: BinaryPrimitives.f32,
+    };
+
+    const codec = new PooledCodec(schema);
+    const data = { id: 123, value: 45.67 };
+
+    const buffer = new Uint8Array(100);
+    const bytesWritten = codec.encodeInto(data, buffer, 10);
+
+    expect(bytesWritten).toBe(8); // 4 + 4
+
+    // Verify the data was written at the correct offset (using big-endian like BinaryPrimitives)
+    const view = new DataView(buffer.buffer, buffer.byteOffset);
+    expect(view.getUint32(10, false)).toBe(123);
+    expect(view.getFloat32(14, false)).toBeCloseTo(45.67, 2);
+  });
+
+  test("encodeInto should produce same result as encode", () => {
+    const PlayerSchema = {
+      entityId: BinaryPrimitives.u32,
+      x: BinaryPrimitives.f32,
+      y: BinaryPrimitives.f32,
+    };
+
+    const UpdateSchema = {
+      tick: BinaryPrimitives.u32,
+      players: PooledCodec.array(PlayerSchema),
+    };
+
+    const codec = new PooledCodec(UpdateSchema);
+    const data = {
+      tick: 42,
+      players: [
+        { entityId: 1, x: 10.5, y: 20.5 },
+        { entityId: 2, x: 30.5, y: 40.5 },
+      ],
+    };
+
+    // Encode using the old method
+    const encodedOld = codec.encode(data);
+
+    // Encode using encodeInto
+    const size = codec.calculateSize(data);
+    const buffer = new Uint8Array(size);
+    const bytesWritten = codec.encodeInto(data, buffer, 0);
+
+    expect(bytesWritten).toBe(size);
+    expect(Array.from(buffer)).toEqual(Array.from(encodedOld));
+  });
+
+  test("encodeInto should work with offset in target buffer", () => {
+    const schema = {
+      a: BinaryPrimitives.u16,
+      b: BinaryPrimitives.u16,
+    };
+
+    const codec = new PooledCodec(schema);
+    const data1 = { a: 100, b: 200 };
+    const data2 = { a: 300, b: 400 };
+
+    const buffer = new Uint8Array(20);
+
+    // Write first object at offset 0
+    const bytes1 = codec.encodeInto(data1, buffer, 0);
+    expect(bytes1).toBe(4);
+
+    // Write second object at offset 4
+    const bytes2 = codec.encodeInto(data2, buffer, 4);
+    expect(bytes2).toBe(4);
+
+    // Verify both objects are in the buffer (using big-endian)
+    const view = new DataView(buffer.buffer, buffer.byteOffset);
+    expect(view.getUint16(0, false)).toBe(100);
+    expect(view.getUint16(2, false)).toBe(200);
+    expect(view.getUint16(4, false)).toBe(300);
+    expect(view.getUint16(6, false)).toBe(400);
+  });
+
+  test("array field encodeInto should write directly without intermediate allocations", () => {
+    const PlayerSchema = {
+      id: BinaryPrimitives.u32,
+      health: BinaryPrimitives.u8,
+    };
+
+    const arrayField = PooledCodec.array(PlayerSchema);
+    const players = [
+      { id: 1, health: 100 },
+      { id: 2, health: 75 },
+      { id: 3, health: 50 },
+    ];
+
+    const buffer = new Uint8Array(100);
+    const bytesWritten = arrayField.encodeInto(players, buffer, 5);
+
+    // 2 (length) + 3 * 5 (id:4 + health:1) = 17 bytes
+    expect(bytesWritten).toBe(17);
+
+    // Verify array length was written
+    const view = new DataView(buffer.buffer, buffer.byteOffset);
+    expect(view.getUint16(5, false)).toBe(3);
+
+    // Verify first player (using big-endian)
+    expect(view.getUint32(7, false)).toBe(1);
+    expect(view.getUint8(11)).toBe(100);
+  });
+
+  test("calculateSize and encodeInto should work with multiple arrays", () => {
+    const PlayerSchema = {
+      id: BinaryPrimitives.u32,
+      health: BinaryPrimitives.u8,
+    };
+
+    const EnemySchema = {
+      id: BinaryPrimitives.u32,
+      type: BinaryPrimitives.u8,
+    };
+
+    const UpdateSchema = {
+      tick: BinaryPrimitives.u32,
+      players: PooledCodec.array(PlayerSchema),
+      enemies: PooledCodec.array(EnemySchema),
+    };
+
+    const codec = new PooledCodec(UpdateSchema);
+    const data = {
+      tick: 100,
+      players: [
+        { id: 1, health: 100 },
+        { id: 2, health: 75 },
+      ],
+      enemies: [
+        { id: 10, type: 1 },
+        { id: 11, type: 2 },
+        { id: 12, type: 3 },
+      ],
+    };
+
+    const size = codec.calculateSize(data);
+    // tick(4) + players_len(2) + 2*5 + enemies_len(2) + 3*5 = 4 + 2 + 10 + 2 + 15 = 33
+    expect(size).toBe(33);
+
+    const buffer = new Uint8Array(size);
+    const bytesWritten = codec.encodeInto(data, buffer, 0);
+    expect(bytesWritten).toBe(33);
+
+    // Verify it can be decoded correctly
+    const decoded = codec.decode(buffer);
+    expect(decoded.tick).toBe(100);
+    expect(decoded.players.length).toBe(2);
+    expect(decoded.enemies.length).toBe(3);
+  });
+});
