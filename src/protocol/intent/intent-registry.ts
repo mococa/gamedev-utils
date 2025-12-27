@@ -6,6 +6,8 @@ import type { Intent } from "./intent";
 export interface Codec<T> {
   encode(value: T): Uint8Array;
   decode(buf: Uint8Array): T;
+  calculateSize?(value: T): number;
+  encodeInto?(value: T, buffer: Uint8Array, offset: number): number;
 }
 
 /**
