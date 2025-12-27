@@ -16,8 +16,9 @@ export class IntentTracker<T> {
    * @param {number} tick - The tick number associated with the intent.
    * @param {T} intent - The intent data.
    */
-  track(tick: number, intent: T) {
+  track(tick: number, intent: T): T {
     this.tracker.set(tick, intent);
+    return intent;
   }
 
   /**
