@@ -1,3 +1,4 @@
+import { DefinedIntent } from "./define-intent";
 import type { Intent } from "./intent";
 
 /**
@@ -43,11 +44,11 @@ export class IntentRegistry {
    * Register a codec for a specific intent kind.
    * Call this once per intent type at startup.
    */
-  register<T extends Intent>(kind: number, codec: Codec<T>): void {
-    if (this.codecs.has(kind)) {
-      throw new Error(`Intent kind ${kind} is already registered`);
+  register<T extends Intent>(intent: DefinedIntent<T['kind'], T>): void {
+    if (this.codecs.has(intent.kind)) {
+      throw new Error(`Intent kind ${intent.kind} is already registered`);
     }
-    this.codecs.set(kind, codec);
+    this.codecs.set(intent.kind, intent.codec);
   }
 
   /**
