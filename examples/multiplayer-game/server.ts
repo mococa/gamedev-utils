@@ -16,8 +16,6 @@ class GameServer {
     simulation: Simulation;
     network: ServerNetwork<any, GameStateUpdate>;
     currentTick = 0;
-    pendingResponses = new Set<string>(); // Track peers that sent intents this tick
-    lastSentSnapshots = new Map<string, GameStateUpdate>(); // Track last snapshot sent to each peer
 
     constructor() {
         this.simulation = new Simulation({
@@ -26,62 +24,25 @@ class GameServer {
                 // Server doesn't need input before tick - velocities are set by intents
             },
             onTickAfter: () => {
-                // Check each peer to see if their view of the game state changed
-                // This happens AFTER the tick processes, so positions are up-to-date
+                // Send snapshots to all peers (only if game state changed)
                 const gameState = this.simulation.getGameState();
                 let peersToUpdate = 0;
 
                 for (const peerId of this.network.getPeerIds()) {
-                    const lastSnapshot = this.lastSentSnapshots.get(peerId);
+                    const confirmedClientTick = this.network.getConfirmedClientTick(peerId);
 
-                    // Check if this peer needs an update
-                    let needsUpdate = !lastSnapshot; // First time
-
-                    if (!needsUpdate && lastSnapshot) {
-                        // Check if any player position changed (>0.01 units - very small threshold)
-                        for (const currentPlayer of gameState) {
-                            const lastPlayer = lastSnapshot.find(p => p.id === currentPlayer.id);
-
-                            if (!lastPlayer) {
-                                // New player joined
-                                needsUpdate = true;
-                                break;
-                            }
-
-                            // Check position difference (small threshold to catch early movement)
-                            if (Math.abs(currentPlayer.x - lastPlayer.x) > 0.01 ||
-                                Math.abs(currentPlayer.y - lastPlayer.y) > 0.01) {
-                                needsUpdate = true;
-                                break;
-                            }
-                        }
-
-                        // Also check if any player left
-                        if (!needsUpdate && lastSnapshot.length !== gameState.length) {
-                            needsUpdate = true;
-                        }
-                    }
-
-                    if (needsUpdate) {
+                    // sendSnapshotToPeerIfChanged automatically detects changes using hash comparison
+                    if (this.network.sendSnapshotToPeerIfChanged(peerId, 'gameState', {
+                        tick: confirmedClientTick, // Client tick for reconciliation
+                        updates: gameState,
+                    })) {
                         peersToUpdate++;
-                        // Send the last confirmed client tick from when they sent an intent
-                        // The client will drop intents up to this tick during reconciliation
-                        const confirmedClientTick = this.network.getConfirmedClientTick(peerId);
-                        this.network.sendSnapshotToPeer(peerId, 'gameState', {
-                            tick: confirmedClientTick, // Client tick, not server tick
-                            updates: gameState,
-                        });
-
-                        // Clone the game state for this peer
-                        this.lastSentSnapshots.set(peerId, JSON.parse(JSON.stringify(gameState)));
                     }
                 }
 
                 if (peersToUpdate > 0) {
                     console.log(`Server tick ${this.currentTick}: Sent snapshots to ${peersToUpdate}/${this.network.getPeerIds().length} peers`);
                 }
-
-                this.pendingResponses.clear();
             },
         });
 
@@ -104,11 +65,6 @@ class GameServer {
     }
 
     setupNetworkHandlers() {
-        // Track which peers need responses this tick
-        this.network.onAnyIntent((peerId) => {
-            this.pendingResponses.add(peerId);
-        });
-
         // Handle new player connections
         this.network.onConnection((peerId) => {
             console.log(`Player connected: ${peerId}`);
@@ -126,9 +82,7 @@ class GameServer {
         this.network.onDisconnection((peerId) => {
             console.log(`Player disconnected: ${peerId}`);
             this.simulation.removePlayer(peerId);
-            this.lastSentSnapshots.delete(peerId);
-            // No need to notify - they're gone
-            // Note: ServerNetwork automatically cleans up lastProcessedClientTick
+            // Note: ServerNetwork automatically cleans up internal state
         });
 
         // Handle move intents
