@@ -4,17 +4,20 @@ import { IntentRegistry } from "../protocol/intent/intent-registry";
 import { SnapshotRegistry } from "../protocol/snapshot/snapshot-registry";
 import { PooledCodec } from "../core/pooled-codec/pooled-codec";
 import { BinaryPrimitives } from "../core/binary-codec";
+import { defineIntent } from "../protocol/intent/define-intent";
 import type { TransportAdapter, ServerTransportAdapter } from "./types";
-import type { Intent } from "../protocol/intent/intent";
 import type { Snapshot } from "../protocol/snapshot/snapshot";
 
-// Test types
-interface MoveIntent extends Intent {
-	kind: 1;
-	tick: number;
-	dx: number;
-	dy: number;
-}
+// Define move intent using defineIntent
+const MoveIntent = defineIntent({
+	kind: 1 as const,
+	schema: {
+		dx: BinaryPrimitives.f32,
+		dy: BinaryPrimitives.f32,
+	},
+});
+
+type MoveIntent = typeof MoveIntent.type;
 
 interface PlayerUpdate {
 	x: number;
@@ -116,14 +119,8 @@ describe("ServerNetwork", () => {
 		transport = new MockServerTransport();
 		intentRegistry = new IntentRegistry();
 
-		// Register move intent codec
-		const moveIntentCodec = new PooledCodec({
-			kind: BinaryPrimitives.u8,
-			tick: BinaryPrimitives.u32,
-			dx: BinaryPrimitives.f32,
-			dy: BinaryPrimitives.f32,
-		});
-		intentRegistry.register(1, moveIntentCodec);
+		// Register move intent
+		intentRegistry.register(MoveIntent);
 
 		server = new ServerNetwork<MockPeerTransport, GameSnapshots>({
 			transport,
@@ -242,7 +239,7 @@ describe("ServerNetwork", () => {
 	describe("Intent handling", () => {
 		test("should receive and decode intent from peer", () => {
 			const receivedIntents: Array<{ peerId: string; intent: MoveIntent }> = [];
-			server.onIntent<MoveIntent>(1, (peerId, intent) => {
+			server.onIntent<MoveIntent>(MoveIntent, (peerId, intent) => {
 				receivedIntents.push({ peerId, intent });
 			});
 
@@ -274,7 +271,7 @@ describe("ServerNetwork", () => {
 
 		test("should handle intents from multiple peers", () => {
 			const receivedIntents: Array<{ peerId: string; intent: MoveIntent }> = [];
-			server.onIntent<MoveIntent>(1, (peerId, intent) => {
+			server.onIntent<MoveIntent>(MoveIntent, (peerId, intent) => {
 				receivedIntents.push({ peerId, intent });
 			});
 
@@ -316,7 +313,7 @@ describe("ServerNetwork", () => {
 		});
 
 		test("should handle malformed intent data gracefully", () => {
-			server.onIntent<MoveIntent>(1, () => {});
+			server.onIntent<MoveIntent>(MoveIntent, () => {});
 			const peer = transport.simulateConnection("peer1");
 
 			// Send malformed intent
@@ -608,7 +605,7 @@ describe("ServerNetwork", () => {
 			});
 
 			const intentsReceived: MoveIntent[] = [];
-			smallServer.onIntent<MoveIntent>(1, (_, intent) => {
+			smallServer.onIntent<MoveIntent>(MoveIntent, (_, intent) => {
 				intentsReceived.push(intent);
 			});
 
@@ -658,6 +655,145 @@ describe("ServerNetwork", () => {
 
 			console.log = originalLog;
 			expect(logs.filter((l) => l.includes("[ServerNetwork]")).length).toBeGreaterThan(0);
+		});
+	});
+
+	describe("Delta detection with sendSnapshotToPeerIfChanged", () => {
+		test("should send snapshot on first call (no previous hash)", () => {
+			const peer = transport.simulateConnection("peer1");
+
+			const snapshot: Snapshot<PlayerUpdate> = {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			};
+
+			const wasSent = server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot);
+
+			expect(wasSent).toBe(true);
+			expect(peer.sentMessages.length).toBe(1);
+		});
+
+		test("should not send snapshot if data unchanged", () => {
+			const peer = transport.simulateConnection("peer1");
+
+			const snapshot: Snapshot<PlayerUpdate> = {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			};
+
+			// First send
+			server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot);
+			expect(peer.sentMessages.length).toBe(1);
+
+			// Second send with same data (different tick, same updates)
+			const snapshot2: Snapshot<PlayerUpdate> = {
+				tick: 2,
+				updates: { x: 10, y: 20, health: 100 },
+			};
+
+			const wasSent = server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot2);
+
+			expect(wasSent).toBe(false);
+			expect(peer.sentMessages.length).toBe(1); // Still only 1 message
+		});
+
+		test("should send snapshot if data changed", () => {
+			const peer = transport.simulateConnection("peer1");
+
+			const snapshot1: Snapshot<PlayerUpdate> = {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			};
+
+			server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot1);
+			expect(peer.sentMessages.length).toBe(1);
+
+			// Send with changed position
+			const snapshot2: Snapshot<PlayerUpdate> = {
+				tick: 2,
+				updates: { x: 15, y: 20, health: 100 }, // x changed
+			};
+
+			const wasSent = server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot2);
+
+			expect(wasSent).toBe(true);
+			expect(peer.sentMessages.length).toBe(2);
+		});
+
+		test("should track hashes separately per peer", () => {
+			const peer1 = transport.simulateConnection("peer1");
+			const peer2 = transport.simulateConnection("peer2");
+
+			const snapshot: Snapshot<PlayerUpdate> = {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			};
+
+			// Send to peer1
+			const sent1 = server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot);
+			expect(sent1).toBe(true);
+			expect(peer1.sentMessages.length).toBe(1);
+
+			// Send same snapshot to peer2 - should send because peer2 hasn't received it
+			const sent2 = server.sendSnapshotToPeerIfChanged("peer2", "player", snapshot);
+			expect(sent2).toBe(true);
+			expect(peer2.sentMessages.length).toBe(1);
+
+			// Send again to peer1 - should not send (duplicate)
+			const sent3 = server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot);
+			expect(sent3).toBe(false);
+			expect(peer1.sentMessages.length).toBe(1);
+		});
+
+		test("should track hashes separately per snapshot type", () => {
+			const peer = transport.simulateConnection("peer1");
+
+			const playerSnapshot: Snapshot<PlayerUpdate> = {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			};
+
+			const scoreSnapshot: Snapshot<ScoreUpdate> = {
+				tick: 1,
+				updates: { score: 50 },
+			};
+
+			// Send player snapshot
+			server.sendSnapshotToPeerIfChanged("peer1", "player", playerSnapshot);
+			expect(peer.sentMessages.length).toBe(1);
+
+			// Send score snapshot - different type, should send
+			server.sendSnapshotToPeerIfChanged("peer1", "score", scoreSnapshot);
+			expect(peer.sentMessages.length).toBe(2);
+
+			// Send player snapshot again - should not send (duplicate)
+			const sent = server.sendSnapshotToPeerIfChanged("peer1", "player", playerSnapshot);
+			expect(sent).toBe(false);
+			expect(peer.sentMessages.length).toBe(2);
+		});
+
+		test("should cleanup hashes on peer disconnect", () => {
+			const peer = transport.simulateConnection("peer1");
+
+			const snapshot: Snapshot<PlayerUpdate> = {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			};
+
+			// Send snapshot
+			server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot);
+			expect(peer.sentMessages.length).toBe(1);
+
+			// Disconnect
+			transport.simulateDisconnection("peer1");
+
+			// Reconnect with same ID
+			const newPeer = transport.simulateConnection("peer1");
+
+			// Should send again (hash was cleared on disconnect)
+			const wasSent = server.sendSnapshotToPeerIfChanged("peer1", "player", snapshot);
+			expect(wasSent).toBe(true);
+			expect(newPeer.sentMessages.length).toBe(1);
 		});
 	});
 });

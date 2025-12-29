@@ -87,6 +87,9 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	/** Track last processed client tick per peer (for client-side prediction) */
 	private lastProcessedClientTick = new Map<string, number>();
 
+	/** Track last sent snapshot hashes per peer per type (for delta detection) */
+	private lastSnapshotHashes = new Map<string, Map<string, number>>();
+
 	/** Intent handlers: kind -> handler[] (supports multiple handlers) */
 	private intentHandlers = new Map<number, Array<(peerId: string, intent: Intent) => void>>();
 
@@ -279,6 +282,133 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 		peer.lastSentTick = snapshot.tick;
 
 		this.log(`Sent snapshot (type: ${type}, tick: ${snapshot.tick}) to peer ${peerId}`);
+	}
+
+	/**
+	 * Send a snapshot to a peer only if it has changed since the last send.
+	 * Uses fast binary hash comparison with zero allocations.
+	 *
+	 * @template T The specific snapshot update type
+	 * @param peerId The peer to send to
+	 * @param type The snapshot type identifier
+	 * @param snapshot The snapshot to send
+	 * @param priority Message priority (default: NORMAL)
+	 * @returns true if snapshot was sent, false if skipped (no change)
+	 *
+	 * @remarks
+	 * This method encodes the snapshot and computes a hash of the binary data.
+	 * This is more efficient than JSON.stringify because:
+	 * 1. No string allocations (hash is a number)
+	 * 2. Binary hashing is faster than string hashing
+	 * 3. Reuses the encoding work (binary data needed for sending anyway)
+	 *
+	 * @example
+	 * ```ts
+	 * // In your game tick loop
+	 * for (const peerId of server.getPeerIds()) {
+	 *   const wasSent = server.sendSnapshotToPeerIfChanged(peerId, 'gameState', {
+	 *     tick: currentTick,
+	 *     updates: gameState
+	 *   });
+	 *   if (wasSent) sentCount++;
+	 * }
+	 * ```
+	 */
+	sendSnapshotToPeerIfChanged<T extends Partial<TSnapshots>>(
+		peerId: string,
+		type: string,
+		snapshot: Snapshot<T>,
+		priority: MessagePriority = MessagePriority.NORMAL
+	): boolean {
+		const peer = this.peers.get(peerId);
+		if (!peer) {
+			this.log(`Cannot send snapshot to unknown peer: ${peerId}`);
+			return false;
+		}
+
+		const registry = this.peerSnapshotRegistries.get(peerId);
+		if (!registry) {
+			throw new Error(`No snapshot registry registered for peer: ${peerId}`);
+		}
+
+		// Encode snapshot (needed for both hashing and sending)
+		const snapshotData = registry.encode(type, snapshot);
+
+		// Get or create hash map for this peer
+		let peerHashes = this.lastSnapshotHashes.get(peerId);
+		if (!peerHashes) {
+			peerHashes = new Map<string, number>();
+			this.lastSnapshotHashes.set(peerId, peerHashes);
+		}
+
+		// Compute hash of only the updates portion (skip typeId + tick)
+		// Binary format: [typeId(1) + tick(4) + updates(...)]
+		// We only want to hash the updates, not the tick
+		const updatesData = snapshotData.subarray(5); // Skip first 5 bytes
+		const currentHash = this.hashBinary(updatesData);
+		const lastHash = peerHashes.get(type);
+
+		// Only send if changed (or first time)
+		if (lastHash === undefined || currentHash !== lastHash) {
+			// Wrap with message type header (use pool if enabled)
+			let message: Uint8Array;
+			if (this.messagePool) {
+				// Zero-copy path: reuse pooled buffer
+				message = this.messagePool.wrap(MessageType.SNAPSHOT, snapshotData);
+			} else {
+				// Fallback path: allocate new buffer
+				message = new Uint8Array(1 + snapshotData.byteLength);
+				message[0] = MessageType.SNAPSHOT;
+				message.set(snapshotData, 1);
+			}
+
+			// Check backpressure and queue if necessary
+			if (peer.isBackpressured || peer.sendQueue.length > 0) {
+				this.queueMessage(peer, message, priority);
+				if (this.messagePool) {
+					this.messagePool.release(message);
+				}
+			} else {
+				// Try to send immediately
+				this.sendMessageToPeer(peer, message);
+			}
+
+			// Update tracking
+			peer.lastSentTick = snapshot.tick;
+			peerHashes.set(type, currentHash);
+
+			this.log(`Sent snapshot (type: ${type}, tick: ${snapshot.tick}) to peer ${peerId}`);
+			return true; // Sent
+		}
+
+		this.log(`Skipped snapshot (type: ${type}) to peer ${peerId} - no change detected`);
+		return false; // Skipped (no change)
+	}
+
+	/**
+	 * Fast binary hash function with zero allocations.
+	 * Uses FNV-1a algorithm optimized for binary data.
+	 *
+	 * @param data The binary data to hash
+	 * @returns A 32-bit hash value
+	 *
+	 * @remarks
+	 * This is significantly faster than JSON.stringify + string hashing because:
+	 * - No string allocations
+	 * - Direct byte-level hashing
+	 * - Operates on data that's already needed for encoding
+	 *
+	 * FNV-1a is chosen for its speed and good distribution properties.
+	 */
+	private hashBinary(data: Uint8Array): number {
+		let hash = 2166136261; // FNV-1a 32-bit offset basis
+
+		for (let i = 0; i < data.length; i++) {
+			hash ^= data[i];
+			hash = Math.imul(hash, 16777619); // FNV-1a 32-bit prime
+		}
+
+		return hash >>> 0; // Ensure unsigned 32-bit integer
 	}
 
 	/**
@@ -645,6 +775,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 		this.peers.delete(peerId);
 		this.peerSnapshotRegistries.delete(peerId);
 		this.lastProcessedClientTick.delete(peerId);
+		this.lastSnapshotHashes.delete(peerId);
 
 		// Notify handlers
 		for (const handler of this.disconnectionHandlers) {
