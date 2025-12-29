@@ -81,13 +81,24 @@ export class ComponentStore<T extends object> {
    */
   get(entityId: number): Readonly<T> {
     const baseOffset = entityId * this.stride;
+    const length = this.fields.length;
 
-    // Optimized loop using pre-computed offsets
-    for (let i = 0; i < this.fields.length; i++) {
-      this.reusableObject[this.fieldKeys[i]] = this.fields[i].read(
-        this.view,
-        baseOffset + this.fieldOffsets[i]
-      );
+    // Unrolled loop for common cases
+    if (length === 2) {
+      this.reusableObject[this.fieldKeys[0]] = this.fields[0].read(this.view, baseOffset + this.fieldOffsets[0]);
+      this.reusableObject[this.fieldKeys[1]] = this.fields[1].read(this.view, baseOffset + this.fieldOffsets[1]);
+    } else if (length === 3) {
+      this.reusableObject[this.fieldKeys[0]] = this.fields[0].read(this.view, baseOffset + this.fieldOffsets[0]);
+      this.reusableObject[this.fieldKeys[1]] = this.fields[1].read(this.view, baseOffset + this.fieldOffsets[1]);
+      this.reusableObject[this.fieldKeys[2]] = this.fields[2].read(this.view, baseOffset + this.fieldOffsets[2]);
+    } else {
+      // Generic loop for other sizes
+      for (let i = 0; i < length; i++) {
+        this.reusableObject[this.fieldKeys[i]] = this.fields[i].read(
+          this.view,
+          baseOffset + this.fieldOffsets[i]
+        );
+      }
     }
 
     return this.reusableObject as Readonly<T>;
@@ -126,13 +137,25 @@ export class ComponentStore<T extends object> {
    */
   set(entityId: number, data: T): void {
     const baseOffset = entityId * this.stride;
+    const length = this.fields.length;
 
-    for (let i = 0; i < this.fields.length; i++) {
-      this.fields[i].write(
-        this.view,
-        baseOffset + this.fieldOffsets[i],
-        data[this.fieldKeys[i]]
-      );
+    // Unrolled loop for common cases
+    if (length === 2) {
+      this.fields[0].write(this.view, baseOffset + this.fieldOffsets[0], data[this.fieldKeys[0]]);
+      this.fields[1].write(this.view, baseOffset + this.fieldOffsets[1], data[this.fieldKeys[1]]);
+    } else if (length === 3) {
+      this.fields[0].write(this.view, baseOffset + this.fieldOffsets[0], data[this.fieldKeys[0]]);
+      this.fields[1].write(this.view, baseOffset + this.fieldOffsets[1], data[this.fieldKeys[1]]);
+      this.fields[2].write(this.view, baseOffset + this.fieldOffsets[2], data[this.fieldKeys[2]]);
+    } else {
+      // Generic loop for other sizes
+      for (let i = 0; i < length; i++) {
+        this.fields[i].write(
+          this.view,
+          baseOffset + this.fieldOffsets[i],
+          data[this.fieldKeys[i]]
+        );
+      }
     }
   }
 
@@ -143,9 +166,11 @@ export class ComponentStore<T extends object> {
   update(entityId: number, partial: Partial<T>): void {
     const baseOffset = entityId * this.stride;
 
-    // Only iterate over fields that are being updated (faster for sparse updates)
-    for (const key in partial) {
-      const i = this.fieldIndexMap.get(key as keyof T)!;
+    // Use Object.keys for faster iteration than for...in
+    const keys = Object.keys(partial) as (keyof T)[];
+    for (let j = 0; j < keys.length; j++) {
+      const key = keys[j];
+      const i = this.fieldIndexMap.get(key)!;
       this.fields[i].write(
         this.view,
         baseOffset + this.fieldOffsets[i],

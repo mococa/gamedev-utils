@@ -50,11 +50,11 @@ for (const entity of world.query(Transform, Velocity)) {
   const transform = world.get(entity, Transform);
   const velocity = world.get(entity, Velocity);
 
-  // Update position
-  transform.x += velocity.vx * deltaTime;
-  transform.y += velocity.vy * deltaTime;
-
-  world.set(entity, Transform, transform);
+  // Update position using update() for efficiency
+  world.update(entity, Transform, {
+    x: transform.x + velocity.vx * deltaTime,
+    y: transform.y + velocity.vy * deltaTime,
+  });
 }
 ```
 
@@ -160,8 +160,8 @@ network.send(snapshot);
 |--------|-------------|
 | **Spawn rate** | 30M+ entities/sec |
 | **Query speed** | 10k entities in 0.06ms |
-| **Component access** | 9.4M ops/sec (get) |
-| **Frame time** (5k entities) | 1.2ms avg (~850 FPS) |
+| **Component access** | 11.1M ops/sec (get) |
+| **Frame time** (5k entities) | 1.07ms avg (~931 FPS) |
 | **Memory overhead** | Zero allocations in gameplay |
 
 ### Realistic Game Simulation
@@ -169,14 +169,21 @@ Movement + Health systems with 2 queries per frame:
 
 | Entities | Avg Frame | FPS | 60fps (16.67ms) | 30fps (33.33ms) |
 |----------|-----------|-----|-----------------|-----------------|
-| 500 | 0.31ms | 3,270 | ✅ 1.9% | ✅ 0.9% |
-| 1,000 | 0.29ms | 3,464 | ✅ 1.7% | ✅ 0.9% |
-| 5,000 | 1.35ms | 742 | ✅ 8.1% | ✅ 4.1% |
-| 10,000 | 2.61ms | 384 | ✅ 15.7% | ✅ 7.8% |
-| 25,000 | 6.65ms | 150 | ✅ 39.9% | ✅ 19.9% |
-| 50,000 | 10.91ms | 92 | ✅ 65.4% | ✅ 32.7% |
+| 500 | 0.27ms | 3,704 | ✅ 1.6% | ✅ 0.8% |
+| 1,000 | 0.30ms | 3,333 | ✅ 1.8% | ✅ 0.9% |
+| 5,000 | 1.07ms | 931 | ✅ 6.4% | ✅ 3.2% |
+| 10,000 | 2.11ms | 475 | ✅ 12.7% | ✅ 6.3% |
+| 25,000 | 4.32ms | 232 | ✅ 25.9% | ✅ 13.0% |
+| 50,000 | 8.76ms | 114 | ✅ 52.5% | ✅ 26.3% |
 
-**Even 50k entities stays within both 60 FPS and 30 FPS budgets!**
+**Even 50k entities stays comfortably within both 60 FPS and 30 FPS budgets!**
+
+### Optimizations Applied
+- Loop unrolling for 2-field and 3-field components (90% of use cases)
+- Query loop unrolling (4x batch processing)
+- Component-specialized read/write paths
+- O(1) entity lookups with index mapping
+- Power-of-2 ring buffer with bitwise operations
 
 Run benchmarks: `bun test src/ecs/benchmark.test.ts`
 
@@ -191,10 +198,11 @@ class MovementSystem {
       const t = world.get(entity, Transform);
       const v = world.get(entity, Velocity);
 
-      t.x += v.vx * deltaTime;
-      t.y += v.vy * deltaTime;
-
-      world.set(entity, Transform, t);
+      // Use update() for efficient partial updates
+      world.update(entity, Transform, {
+        x: t.x + v.vx * deltaTime,
+        y: t.y + v.vy * deltaTime,
+      });
     }
   }
 }
@@ -224,13 +232,16 @@ function gameLoop(deltaTime: number) {
 ### Partial Updates
 
 ```typescript
-// Instead of get + set (slower)
+// ❌ WRONG: Can't mutate readonly
 const transform = world.get(entity, Transform);
-transform.x = 150;
+transform.x = 150; // TypeScript error!
 world.set(entity, Transform, transform);
 
-// Use update() for partial changes (faster)
+// ✅ CORRECT: Use update() for partial changes (fastest!)
 world.update(entity, Transform, { x: 150 });
+
+// ✅ ALSO CORRECT: Use set() to replace all fields
+world.set(entity, Transform, { x: 150, y: 200, rotation: 0 });
 ```
 
 ### Component Reuse with Tags

@@ -397,8 +397,27 @@ export class World {
     // Fast array iteration with direct bitmask access
     const entities = this.aliveEntitiesArray;
     const masks = this.componentMasks;
+    const length = entities.length;
 
-    for (let i = 0; i < entities.length; i++) {
+    // Unrolled loop for better performance
+    let i = 0;
+    const remainder = length % 4;
+
+    // Process 4 entities at a time
+    for (; i < length - remainder; i += 4) {
+      const e0 = entities[i];
+      const e1 = entities[i + 1];
+      const e2 = entities[i + 2];
+      const e3 = entities[i + 3];
+
+      if ((masks[e0] & requiredMask) === requiredMask) buffer.push(e0);
+      if ((masks[e1] & requiredMask) === requiredMask) buffer.push(e1);
+      if ((masks[e2] & requiredMask) === requiredMask) buffer.push(e2);
+      if ((masks[e3] & requiredMask) === requiredMask) buffer.push(e3);
+    }
+
+    // Process remaining entities
+    for (; i < length; i++) {
       const entity = entities[i];
       if ((masks[entity] & requiredMask) === requiredMask) {
         buffer.push(entity);
