@@ -184,9 +184,9 @@ describe("defineIntent", () => {
       type MoveIntent = typeof MoveIntent.type;
       type AttackIntent = typeof AttackIntent.type;
 
-      // Register using the kind and codec from defineIntent
-      registry.register(MoveIntent.kind, MoveIntent.codec);
-      registry.register(AttackIntent.kind, AttackIntent.codec);
+      // Register using defineIntent objects
+      registry.register(MoveIntent);
+      registry.register(AttackIntent);
 
       const move: MoveIntent = {
         kind: MoveIntent.kind,
@@ -232,10 +232,10 @@ describe("defineIntent", () => {
         schema: {},
       });
 
-      registry.register(Intent1.kind, Intent1.codec);
+      registry.register(Intent1);
 
       expect(() => {
-        registry.register(Intent2.kind, Intent2.codec);
+        registry.register(Intent2);
       }).toThrow("Intent kind 5 is already registered");
     });
   });

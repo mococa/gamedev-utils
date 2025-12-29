@@ -4,17 +4,20 @@ import { IntentRegistry } from "../protocol/intent/intent-registry";
 import { SnapshotRegistry } from "../protocol/snapshot/snapshot-registry";
 import { PooledCodec } from "../core/pooled-codec/pooled-codec";
 import { BinaryPrimitives } from "../core/binary-codec";
+import { defineIntent } from "../protocol/intent/define-intent";
 import type { TransportAdapter } from "./types";
-import type { Intent } from "../protocol/intent/intent";
 import type { Snapshot } from "../protocol/snapshot/snapshot";
 
-// Test types
-interface MoveIntent extends Intent {
-	kind: 1;
-	tick: number;
-	dx: number;
-	dy: number;
-}
+// Define move intent using defineIntent
+const MoveIntent = defineIntent({
+	kind: 1 as const,
+	schema: {
+		dx: BinaryPrimitives.f32,
+		dy: BinaryPrimitives.f32,
+	},
+});
+
+type MoveIntent = typeof MoveIntent.type;
 
 interface PlayerUpdate {
 	x: number;
@@ -80,14 +83,8 @@ describe("ClientNetwork", () => {
 		intentRegistry = new IntentRegistry();
 		snapshotRegistry = new SnapshotRegistry<GameSnapshots>();
 
-		// Register move intent codec
-		const moveIntentCodec = new PooledCodec({
-			kind: BinaryPrimitives.u8,
-			tick: BinaryPrimitives.u32,
-			dx: BinaryPrimitives.f32,
-			dy: BinaryPrimitives.f32,
-		});
-		intentRegistry.register(1, moveIntentCodec);
+		// Register move intent
+		intentRegistry.register(MoveIntent);
 
 		// Register snapshot codecs
 		const playerCodec = new PooledCodec({

@@ -89,14 +89,14 @@ describe("IntentTracker", () => {
     expect(values[1]).toEqual({ action: "move", x: 15, y: 25 });
   });
 
-  test("should handle overwriting intent at same tick", () => {
+  test("should handle multiple intents at same tick", () => {
     const tracker = new IntentTracker<string>();
     tracker.track(1, "first");
-    tracker.track(1, "second"); // Overwrite
+    tracker.track(1, "second"); // Add to same tick
 
-    expect(tracker.size).toBe(1);
+    expect(tracker.size).toBe(1); // Still one tick
     const values = tracker.values();
-    expect(values).toEqual(["second"]);
+    expect(values).toEqual(["first", "second"]); // Both intents stored
   });
 
   test("should maintain correct size after operations", () => {
@@ -281,12 +281,12 @@ describe("Reconciliator", () => {
   });
 
   test("should handle empty intent list", () => {
-    let replayedIntents: PlayerIntent[] | null = null;
+    let onReplayCalled = false;
 
     const reconciliator = new Reconciliator<PlayerIntent, PlayerState>({
       onLoadState: () => {},
       onReplay: (intents) => {
-        replayedIntents = intents;
+        onReplayCalled = true;
       },
     });
 
@@ -296,7 +296,8 @@ describe("Reconciliator", () => {
       state: { x: 50, y: 50, health: 100 },
     });
 
-    expect(replayedIntents!).toEqual([]);
+    // onReplay should not be called when there are no intents to replay
+    expect(onReplayCalled).toBe(false);
   });
 
   test("should work with complex intent types", () => {
