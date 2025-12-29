@@ -4,6 +4,7 @@ import type { Snapshot } from "../protocol/snapshot/snapshot";
 import type { Intent } from "../protocol/intent/intent";
 import { MessageType, MessagePriority, type PeerState, type ServerTransportAdapter, type TransportAdapter, type NetworkConfig, type QueuedMessage } from "./types";
 import { MessageWrapperPool } from "./buffer-pool";
+import { DefinedIntent } from "../protocol";
 
 /**
  * Configuration for ServerNetwork
@@ -29,6 +30,13 @@ export interface ServerNetworkConfig<TPeer extends TransportAdapter, TSnapshots>
  * @template TPeer The transport adapter type for peer connections
  * @template TSnapshots Union type of all possible snapshot update types
  *
+ * @remarks
+ * **Client-Side Prediction Support:**
+ * - Automatically tracks the last processed client tick for each peer
+ * - All intents include a 'tick' field (added by defineIntent())
+ * - Use `getConfirmedClientTick(peerId)` to get the confirmed tick for snapshots
+ * - Use `onAnyIntent()` to track which peers need snapshot responses
+ *
  * @example
  * ```ts
  * type GameSnapshots = PlayerUpdate | ScoreUpdate | ProjectileUpdate;
@@ -44,14 +52,22 @@ export interface ServerNetworkConfig<TPeer extends TransportAdapter, TSnapshots>
  *   },
  * });
  *
+ * // Track which peers need responses (fires for ALL intents)
+ * const pendingResponses = new Set<string>();
+ * server.onAnyIntent((peerId) => {
+ *   pendingResponses.add(peerId);
+ * });
+ *
  * // Type-safe intent handlers
  * server.onIntent<MoveIntent>(IntentKind.Move, (peerId, intent) => {
+ *   intent.tick // ✅ Automatically included in all intents
  *   intent.dx // ✅ Correctly typed
  * });
  *
- * // Type-safe snapshot broadcasting
- * server.broadcastSnapshot<PlayerUpdate>('players', {
- *   tick: 100,
+ * // Send snapshot with confirmed client tick (for client-side prediction)
+ * const confirmedTick = server.getConfirmedClientTick(peerId);
+ * server.sendSnapshotToPeer(peerId, 'players', {
+ *   tick: confirmedTick, // Client can reconcile based on this
  *   updates: { players: [...] }
  * });
  * ```
@@ -68,8 +84,14 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	/** Per-peer snapshot registries - this is the key feature! */
 	private peerSnapshotRegistries = new Map<string, SnapshotRegistry<TSnapshots>>();
 
+	/** Track last processed client tick per peer (for client-side prediction) */
+	private lastProcessedClientTick = new Map<string, number>();
+
 	/** Intent handlers: kind -> handler[] (supports multiple handlers) */
 	private intentHandlers = new Map<number, Array<(peerId: string, intent: Intent) => void>>();
+
+	/** Global intent handler called for ALL intents before specific handlers */
+	private anyIntentHandlers: Array<(peerId: string, intent: Intent) => void> = [];
 
 	/** Connection lifecycle handlers */
 	private connectionHandlers: Array<(peerId: string) => void> = [];
@@ -119,21 +141,21 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * @returns Unsubscribe function to remove this handler
 	 */
 	onIntent<T extends Intent>(
-		kind: number,
+		intent: DefinedIntent<T['kind'], T>,
 		handler: (peerId: string, intent: T) => void,
 		validator?: (peerId: string, intent: T) => boolean
 	): () => void {
-		let handlers = this.intentHandlers.get(kind);
+		let handlers = this.intentHandlers.get(intent.kind);
 		if (!handlers) {
 			handlers = [];
-			this.intentHandlers.set(kind, handlers);
+			this.intentHandlers.set(intent.kind, handlers);
 		}
 
 		// Wrap handler with validator if provided
 		const wrappedHandler = (peerId: string, intent: Intent) => {
 			if (validator) {
 				if (!validator(peerId, intent as T)) {
-					this.log(`Intent validation failed for peer ${peerId}, kind ${kind}`);
+					this.log(`Intent validation failed for peer ${peerId}, kind ${intent.kind}`);
 					return;
 				}
 			}
@@ -144,12 +166,45 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 
 		// Return unsubscribe function
 		return () => {
-			const handlers = this.intentHandlers.get(kind);
+			const handlers = this.intentHandlers.get(intent.kind);
 			if (handlers) {
 				const index = handlers.indexOf(wrappedHandler);
 				if (index > -1) {
 					handlers.splice(index, 1);
 				}
+			}
+		};
+	}
+
+	/**
+	 * Register a handler that fires for ALL intents, regardless of kind.
+	 * Useful for tracking which peers sent intents this tick.
+	 *
+	 * @param handler Callback invoked for every intent before specific handlers
+	 * @returns Unsubscribe function
+	 *
+	 * @remarks
+	 * This handler is called BEFORE the specific intent handlers registered via onIntent().
+	 * Common use case: Track which peers need snapshot responses this tick.
+	 *
+	 * @example
+	 * ```ts
+	 * const pendingResponses = new Set<string>();
+	 *
+	 * server.onAnyIntent((peerId, intent) => {
+	 *   // Mark this peer as needing a response on next tick
+	 *   pendingResponses.add(peerId);
+	 * });
+	 * ```
+	 */
+	onAnyIntent(handler: (peerId: string, intent: Intent) => void): () => void {
+		this.anyIntentHandlers.push(handler);
+
+		// Return unsubscribe function
+		return () => {
+			const index = this.anyIntentHandlers.indexOf(handler);
+			if (index > -1) {
+				this.anyIntentHandlers.splice(index, 1);
 			}
 		};
 	}
@@ -434,6 +489,36 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	}
 
 	/**
+	 * Get the last confirmed client tick for a peer.
+	 * Used for client-side prediction reconciliation.
+	 *
+	 * @param peerId The peer ID to query
+	 * @returns The last processed client tick number, or 0 if peer not found
+	 *
+	 * @remarks
+	 * This is automatically tracked when intents arrive, as all intents
+	 * include a 'tick' field (added by defineIntent).
+	 */
+	getConfirmedClientTick(peerId: string): number {
+		return this.lastProcessedClientTick.get(peerId) ?? 0;
+	}
+
+	/**
+	 * Set the confirmed client tick for a peer.
+	 * Rarely needed as this is automatically tracked by handleIntent.
+	 *
+	 * @param peerId The peer ID
+	 * @param tick The client tick number to set
+	 *
+	 * @remarks
+	 * All intents automatically include a 'tick' field via defineIntent(),
+	 * so this is tracked automatically when intents are received.
+	 */
+	setConfirmedClientTick(peerId: string, tick: number): void {
+		this.lastProcessedClientTick.set(peerId, tick);
+	}
+
+	/**
 	 * Close the server and all connections
 	 */
 	close(): void | Promise<void> {
@@ -530,6 +615,9 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 		const snapshotRegistry = this.createPeerSnapshotRegistry();
 		this.peerSnapshotRegistries.set(peerId, snapshotRegistry);
 
+		// Initialize client tick tracking (for client-side prediction)
+		this.lastProcessedClientTick.set(peerId, 0);
+
 		// Setup message handler for this peer
 		peer.onMessage((data) => {
 			this.handlePeerMessage(peerId, data);
@@ -556,6 +644,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 
 		this.peers.delete(peerId);
 		this.peerSnapshotRegistries.delete(peerId);
+		this.lastProcessedClientTick.delete(peerId);
 
 		// Notify handlers
 		for (const handler of this.disconnectionHandlers) {
@@ -625,6 +714,19 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 			const intent = this.intentRegistry.decode(data);
 
 			this.log(`Received intent (kind: ${intent.kind}) from peer ${peerId}`);
+
+			// Automatically track client tick for client-side prediction
+			// All intents have a 'tick' field added by defineIntent()
+			this.lastProcessedClientTick.set(peerId, intent.tick);
+
+			// Call global intent handlers first (e.g., for tracking pending responses)
+			for (const handler of this.anyIntentHandlers) {
+				try {
+					handler(peerId, intent);
+				} catch (error) {
+					this.log(`Error in global intent handler: ${error}`);
+				}
+			}
 
 			const handlers = this.intentHandlers.get(intent.kind);
 			if (handlers && handlers.length > 0) {
