@@ -12,7 +12,7 @@ export const WORLD_WIDTH = 800;
 export const WORLD_HEIGHT = 600;
 export const PLAYER_SIZE = 20;
 export const PLAYER_SPEED = 200;
-export const TICK_RATE = 12;
+export const TICK_RATE = 16;
 
 export enum IntentKind {
     Move = 0x1,
@@ -22,8 +22,8 @@ export namespace Intents {
     export const Move = defineIntent({
         kind: IntentKind.Move,
         schema: {
-            dx: BinaryCodec.f32,
-            dy: BinaryCodec.f32,
+            dx: BinaryCodec.i8,
+            dy: BinaryCodec.i8,
         },
     });
 

@@ -49,7 +49,7 @@ class GameClient {
             },
         });
 
-        this.lerpAlpha = 4 * (1 / this.simulation.ticker.rate);
+        this.lerpAlpha = 3 * (1 / this.simulation.ticker.rate);
 
         // Client-side prediction and reconciliation
         this.reconciliator = new Reconciliator({
