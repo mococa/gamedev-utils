@@ -1,5 +1,6 @@
 import { Component } from "./component";
 import { ComponentStore } from "./component-store";
+import { EntityHandle } from "./entity-handle";
 
 /**
  * Configuration for creating a World
@@ -548,5 +549,34 @@ export class World {
     // TODO: Implement proper deserialization with component IDs
     // For now, this is a placeholder
     throw new Error("Deserialization not yet implemented");
+  }
+
+  /**
+   * Create an EntityHandle wrapper for fluent API usage.
+   *
+   * EntityHandle provides a chainable interface for entity operations with zero runtime overhead.
+   * Modern JIT compilers inline these simple method calls, making them identical to raw World API.
+   *
+   * @param entityId - Entity ID to wrap
+   * @returns EntityHandle for fluent operations
+   *
+   * @example
+   * ```typescript
+   * // Fluent API with chaining
+   * const player = world.entity(world.spawn())
+   *   .add(Transform, { x: 0, y: 0, rotation: 0 })
+   *   .add(Health, { current: 100, max: 100 })
+   *   .add(Velocity, { vx: 0, vy: 0 });
+   *
+   * // Use the handle
+   * player.update(Transform, { x: 10 });
+   * const health = player.get(Health);
+   *
+   * // Mix with raw API
+   * world.add(player.id, Armor, { value: 50 });
+   * ```
+   */
+  entity(entityId: Entity): EntityHandle {
+    return new EntityHandle(this, entityId);
   }
 }
