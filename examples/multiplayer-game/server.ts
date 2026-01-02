@@ -6,7 +6,6 @@ import {
     createSnapshotRegistry,
     Intents,
     type GameStateUpdate,
-    PLAYER_SPEED,
 } from "./shared";
 
 const PORT = 3007;
@@ -55,7 +54,7 @@ class GameServer {
             intentRegistry: createIntentRegistry(),
             createPeerSnapshotRegistry: createSnapshotRegistry,
             config: {
-                debug: true,
+                debug: false,
                 heartbeatInterval: 10000,  // Send heartbeat every 10 seconds
                 heartbeatTimeout: 45000,   // Timeout after 45 seconds of no messages
             },
@@ -87,20 +86,10 @@ class GameServer {
 
         // Handle move intents
         this.network.onIntent(Intents.Move, (peerId, intent) => {
-            console.log(`Intent received: peer=${peerId.substring(0, 8)}, clientTick=${intent.tick}, serverTick=${this.currentTick}, input=(${intent.dx},${intent.dy})`);
+            console.log(`Intent received: peer=${peerId.substring(0, 8)}, clientTick=${intent.tick}, serverTick=${this.currentTick}, direction=(${intent.vx},${intent.vy})`);
 
-            // Note: ServerNetwork automatically tracks intent.tick for client-side prediction
-            // Note: pendingResponses is handled by onAnyIntent above
-
-            // Normalize and scale the input
-            const length = Math.sqrt(intent.dx * intent.dx + intent.dy * intent.dy);
-            if (length > 0) {
-                const normalizedDx = (intent.dx / length) * PLAYER_SPEED;
-                const normalizedDy = (intent.dy / length) * PLAYER_SPEED;
-                this.simulation.setPlayerVelocity(peerId, normalizedDx, normalizedDy);
-            } else {
-                this.simulation.setPlayerVelocity(peerId, 0, 0);
-            }
+            // setPlayerVelocity handles normalization and speed calculation
+            this.simulation.setPlayerVelocity(peerId, intent.vx, intent.vy);
         });
     }
 

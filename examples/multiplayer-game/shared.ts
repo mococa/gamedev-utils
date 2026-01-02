@@ -5,6 +5,7 @@ import {
     IntentRegistry,
     SnapshotRegistry,
     PooledCodec,
+    EventSystem,
 } from "../../src";
 
 // Game constants
@@ -22,8 +23,9 @@ export namespace Intents {
     export const Move = defineIntent({
         kind: IntentKind.Move,
         schema: {
-            dx: BinaryCodec.i8,
-            dy: BinaryCodec.i8,
+            // Raw input direction: -1, 0, or 1
+            vx: BinaryCodec.i8,
+            vy: BinaryCodec.i8,
         },
     });
 
@@ -35,6 +37,8 @@ export type GameStateUpdate = Array<{
     id: string;
     x: number;
     y: number;
+    vx: number;
+    vy: number;
     color: string;
 }>;
 
@@ -51,14 +55,18 @@ export class Simulation {
     ticker: FixedTicker;
     players: Map<string, Player> = new Map();
     localPlayerId?: string; // Track which player is local (for client-side prediction)
+    events: EventSystem<[
+        ['change-direction', { id: string; vx: number; vy: number; tick: number }],
+    ]> = new EventSystem({ events: ['change-direction'] });
 
     constructor({
         onTick,
-        onTickAfter
+        onTickAfter,
     }: {
         onTick?: (deltaTime: number, tick: number) => void;
         onTickAfter?: (deltaTime: number, tick: number) => void;
     } = {}) {
+
         this.ticker = new FixedTicker({
             rate: TICK_RATE,
             onTick: (deltaTime, tick) => {
@@ -79,18 +87,14 @@ export class Simulation {
     }
 
     tick(deltaTime: number): void {
-        // Update player positions based on their velocity
+        // Update all player positions based on their velocity (including local player)
         for (const player of this.players.values()) {
-            // Only update on server (no localPlayerId set), not on client
-            // Client updates local player position per-frame for smooth movement
-            if (!this.localPlayerId) {
-                player.x += player.vx * deltaTime;
-                player.y += player.vy * deltaTime;
+            player.x += player.vx * deltaTime;
+            player.y += player.vy * deltaTime;
 
-                // Keep players in bounds
-                player.x = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_WIDTH - PLAYER_SIZE / 2, player.x));
-                player.y = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_HEIGHT - PLAYER_SIZE / 2, player.y));
-            }
+            // Keep players in bounds
+            player.x = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_WIDTH - PLAYER_SIZE / 2, player.x));
+            player.y = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_HEIGHT - PLAYER_SIZE / 2, player.y));
         }
     }
 
@@ -114,12 +118,33 @@ export class Simulation {
         this.players.delete(id);
     }
 
-    setPlayerVelocity(id: string, vx: number, vy: number): void {
+    setPlayerVelocity(id: string, vx: number, vy: number): boolean {
         const player = this.players.get(id);
-        if (player) {
-            player.vx = vx;
-            player.vy = vy;
+        if (!player) return false;
+
+        // Store old velocity to detect changes
+        const oldVx = player.vx;
+        const oldVy = player.vy;
+
+        const length = Math.hypot(vx, vy);
+        if (!length) {
+            player.vx = 0;
+            player.vy = 0;
+        } else {
+            const normalizedVx = vx / length;
+            const normalizedVy = vy / length;
+            player.vx = normalizedVx * PLAYER_SPEED;
+            player.vy = normalizedVy * PLAYER_SPEED;
         }
+
+        // Emit velocity change event if velocity actually changed
+        // Pass the RAW input direction, not the calculated velocity
+        if ((player.vx !== oldVx || player.vy !== oldVy)) {
+            this.events.emit('change-direction', { id, vx, vy, tick: this.ticker.tickCount });
+            return true;
+        }
+
+        return false;
     }
 
     getGameState(): GameStateUpdate {
@@ -127,6 +152,8 @@ export class Simulation {
             id: p.id,
             x: p.x,
             y: p.y,
+            vx: p.vx,
+            vy: p.vy,
             color: p.color,
         }));
     }
@@ -149,6 +176,8 @@ export function createSnapshotRegistry(): SnapshotRegistry<GameStateUpdate> {
         id: BinaryCodec.string(64),
         x: BinaryCodec.f32,
         y: BinaryCodec.f32,
+        vx: BinaryCodec.f32,
+        vy: BinaryCodec.f32,
         color: BinaryCodec.string(16),
     };
 
