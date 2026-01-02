@@ -122,6 +122,10 @@ export class BunWebSocketPeerTransport implements TransportAdapter {
 		this.socket.close();
 	}
 
+	_handleOpen(): void {
+		// No-op for server peer transport
+	}
+
 	/**
 	 * Internal: Call message handlers (used by server adapter)
 	 */
@@ -227,6 +231,15 @@ export class BunWebSocketServerTransport implements ServerTransportAdapter<BunWe
 		}
 	}
 
+	_handlePeerConnection(peerId: string): void {
+		const peer = this.peers.get(peerId);
+		if (peer) {
+			for (const handler of this.connectionHandlers) {
+				handler(peer, peerId);
+			}
+		}
+	}
+
 	/**
 	 * Static factory method to create a Bun WebSocket server
 	 */
@@ -250,6 +263,8 @@ export class BunWebSocketServerTransport implements ServerTransportAdapter<BunWe
 					// Register peer on connection
 					const peerId = transport._registerPeer(ws);
 					socketToPeerId.set(ws, peerId);
+					transport._handlePeerConnection(peerId);
+					transport.connectionHandlers.forEach((handler) => handler(transport.getPeer(peerId)!, peerId));
 				},
 				message(ws, message) {
 					// Handle incoming message

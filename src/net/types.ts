@@ -24,6 +24,11 @@ export interface TransportAdapter {
 	send(data: Uint8Array): void | Promise<void>;
 
 	/**
+	 * Register a callback for connection open
+	 */
+	onOpen?(handler: () => void): void;
+
+	/**
 	 * Register a callback for incoming binary data
 	 */
 	onMessage(handler: (data: Uint8Array) => void): void;

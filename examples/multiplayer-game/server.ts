@@ -5,44 +5,61 @@ import {
     createIntentRegistry,
     createSnapshotRegistry,
     Intents,
+    WS_PORT as PORT,
     type GameStateUpdate,
+    createRpcRegistry,
+    RPCs,
 } from "./shared";
 
-const PORT = 3007;
 const HTTP_PORT = 3008;
 
 class GameServer {
     simulation: Simulation;
     network: ServerNetwork<any, GameStateUpdate>;
-    currentTick = 0;
+    private playerIds: Map<string, string> = new Map(); // Map peerId to playerId
+    private pendingIntents: Map<string, Intents.Move[]> = new Map(); // Buffer intents per peer
 
     constructor() {
-        this.simulation = new Simulation({
-            onTick: (deltaTime, tick) => {
-                this.currentTick = tick ?? 0;
-                // Server doesn't need input before tick - velocities are set by intents
-            },
-            onTickAfter: () => {
-                // Send snapshots to all peers (only if game state changed)
-                const gameState = this.simulation.getGameState();
-                let peersToUpdate = 0;
+        this.simulation = new Simulation();
 
-                for (const peerId of this.network.getPeerIds()) {
-                    const confirmedClientTick = this.network.getConfirmedClientTick(peerId);
+        // Pre-tick: Apply all buffered intents before stepping
+        this.simulation.events.on('pre-tick', () => {
+            for (const [peerId, intents] of this.pendingIntents) {
+                const playerId = this.playerIds.get(peerId);
+                if (!playerId) continue;
 
-                    // sendSnapshotToPeerIfChanged automatically detects changes using hash comparison
-                    if (this.network.sendSnapshotToPeerIfChanged(peerId, 'gameState', {
-                        tick: confirmedClientTick, // Client tick for reconciliation
-                        updates: gameState,
-                    })) {
-                        peersToUpdate++;
-                    }
+                // Use the latest intent's velocity (handles multiple inputs per tick)
+                const latestIntent = intents[intents.length - 1];
+                this.simulation.applyVelocity(playerId, latestIntent);
+            }
+            this.pendingIntents.clear();
+        });
+
+        // Tick: Step the simulation
+        this.simulation.events.on('tick', ({ tick }) => {
+            this.simulation.step();
+        });
+
+        this.simulation.events.on('post-tick', ({ tick }) => {
+            // Send snapshots to all peers (only if game state changed)
+            const gameState = this.simulation.getSnapshot();
+            let peersToUpdate = 0;
+
+            for (const peerId of this.network.getPeerIds()) {
+                const confirmedClientTick = this.network.getConfirmedClientTick(peerId);
+
+                // sendSnapshotToPeerIfChanged automatically detects changes using hash comparison
+                if (this.network.sendSnapshotToPeerIfChanged(peerId, 'gameState', {
+                    tick: confirmedClientTick, // Client tick for reconciliation
+                    updates: gameState,
+                })) {
+                    peersToUpdate++;
                 }
+            }
 
-                if (peersToUpdate > 0) {
-                    console.log(`Server tick ${this.currentTick}: Sent snapshots to ${peersToUpdate}/${this.network.getPeerIds().length} peers`);
-                }
-            },
+            if (peersToUpdate > 0) {
+                console.log(`Server tick ${tick}: Sent snapshots to ${peersToUpdate}/${this.network.getPeerIds().length} peers`);
+            }
         });
 
         // Create transport
@@ -52,6 +69,7 @@ class GameServer {
         this.network = new ServerNetwork({
             transport,
             intentRegistry: createIntentRegistry(),
+            rpcRegistry: createRpcRegistry(),
             createPeerSnapshotRegistry: createSnapshotRegistry,
             config: {
                 debug: false,
@@ -67,29 +85,53 @@ class GameServer {
         // Handle new player connections
         this.network.onConnection((peerId) => {
             console.log(`Player connected: ${peerId}`);
-            this.simulation.spawn(peerId);
+            // Don't spawn here - wait for SpawnPlayer RPC from client
+        });
 
-            // Send initial game state to the new player immediately
-            const gameState = this.simulation.getGameState();
+        // Handle player disconnections
+        this.network.onDisconnection((peerId) => {
+            console.log(`Player disconnected: ${peerId}`);
+            const playerId = this.playerIds.get(peerId);
+            if (!playerId) {
+                // Player never spawned, just clean up
+                this.pendingIntents.delete(peerId);
+                return;
+            }
+
+            this.simulation.remove(playerId);
+            this.playerIds.delete(peerId);
+            this.pendingIntents.delete(peerId);
+            // Note: ServerNetwork automatically cleans up internal state
+        });
+
+        // Handle spawn RPC
+        this.network.onRpc(RPCs.SpawnPlayer, (peerId, rpc) => {
+            console.log(`RPC SpawnPlayer received from peer=${peerId.substring(0, 8)} with id=${rpc.id}`);
+
+            // Spawn player with client-provided ID
+            this.simulation.spawn(rpc.id);
+            this.playerIds.set(peerId, rpc.id);
+
+            // Send initial game state to the new player
+            const gameState = this.simulation.getSnapshot();
             this.network.sendSnapshotToPeer(peerId, 'gameState', {
                 tick: 0, // No client ticks confirmed yet
                 updates: gameState,
             });
         });
 
-        // Handle player disconnections
-        this.network.onDisconnection((peerId) => {
-            console.log(`Player disconnected: ${peerId}`);
-            this.simulation.removePlayer(peerId);
-            // Note: ServerNetwork automatically cleans up internal state
-        });
-
-        // Handle move intents
+        // Handle move intents - buffer them for processing during tick
         this.network.onIntent(Intents.Move, (peerId, intent) => {
-            console.log(`Intent received: peer=${peerId.substring(0, 8)}, clientTick=${intent.tick}, serverTick=${this.currentTick}, direction=(${intent.vx},${intent.vy})`);
+            const playerId = this.playerIds.get(peerId);
+            if (!playerId) return; // Player not spawned yet
 
-            // setPlayerVelocity handles normalization and speed calculation
-            this.simulation.setPlayerVelocity(peerId, intent.vx, intent.vy);
+            console.log(`Intent buffered: peer=${peerId.substring(0, 8)}, player=${playerId.substring(0, 12)}, clientTick=${intent.tick}, serverTick=${this.simulation.ticker.tickCount}, direction=(${intent.vx},${intent.vy})`);
+
+            // Buffer intent for processing during next pre-tick event
+            if (!this.pendingIntents.has(peerId)) {
+                this.pendingIntents.set(peerId, []);
+            }
+            this.pendingIntents.get(peerId)!.push(intent);
         });
     }
 

@@ -105,4 +105,8 @@ export class Reconciliator<T, U> {
       this.options.onReplay(remainingIntents);
     }
   }
+
+  replay(intents: T[]) {
+    this.options.onReplay(intents);
+  }
 }

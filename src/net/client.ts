@@ -372,6 +372,13 @@ export class ClientNetwork<TSnapshots = unknown> {
 	 * Setup transport event handlers
 	 */
 	private setupTransportHandlers(): void {
+		this.transport.onOpen(() => {
+			this.log("Connected to server");
+			this.connected = true;
+			this.lastMessageReceivedAt = Date.now();
+			this.notifyConnectHandlers();
+		});
+
 		this.transport.onMessage((data) => {
 			this.handleMessage(data);
 		});
@@ -386,11 +393,6 @@ export class ClientNetwork<TSnapshots = unknown> {
 				this.handleError(error);
 			});
 		}
-
-		// Mark as connected immediately (some transports may not have explicit connect events)
-		this.connected = true;
-		this.lastMessageReceivedAt = Date.now();
-		this.notifyConnectHandlers();
 	}
 
 	/**

@@ -11,6 +11,7 @@ import type { TransportAdapter } from "../types";
  */
 export class BrowserWebSocketClientTransport implements TransportAdapter {
     private ws: WebSocket;
+    private openHandler: (() => void) | null = null;
     private messageHandler: ((data: Uint8Array) => void) | null = null;
     private closeHandler: (() => void) | null = null;
     private errorHandler: ((error: Error) => void) | null = null;
@@ -28,7 +29,10 @@ export class BrowserWebSocketClientTransport implements TransportAdapter {
                 this.ws.send(msg);
             }
             this.pendingMessages = [];
-        };
+            if (this.openHandler) {
+                this.openHandler();
+            };
+        }
 
         this.ws.onmessage = (event) => {
             if (this.messageHandler && event.data instanceof ArrayBuffer) {
@@ -62,6 +66,10 @@ export class BrowserWebSocketClientTransport implements TransportAdapter {
 
     onMessage(handler: (data: Uint8Array) => void): void {
         this.messageHandler = handler;
+    }
+
+    onOpen(handler: () => void): void {
+        this.openHandler = handler;
     }
 
     onClose(handler: () => void): void {

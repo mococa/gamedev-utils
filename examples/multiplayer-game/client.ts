@@ -1,63 +1,87 @@
-import { ClientNetwork, lerp } from "../../src";
+import {
+    ClientNetwork,
+    generateId,
+    lerp,
+    Reconciliator,
+} from "../../src";
+
 import { BrowserWebSocketClientTransport } from "../../src/net/adapters/browser-websocket";
 import {
+    Simulation,
+    Intents,
+    GameStateUpdate,
     createIntentRegistry,
     createSnapshotRegistry,
-    Intents,
-    type GameStateUpdate,
     PLAYER_SIZE,
     WORLD_WIDTH,
     WORLD_HEIGHT,
-    Simulation,
+    WS_PORT,
+    createRpcRegistry,
+    RPCs,
 } from "./shared";
 
-const WS_PORT = 3007;
+/* ================================
+   Client
+================================ */
 
-class GameClient {
+export class GameClient {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
-    status: HTMLElement;
 
     network!: ClientNetwork<GameStateUpdate>;
-    connected = false;
-    myId: string | null = null;
-
-    keys: Record<string, boolean> = {};
-    currentInput: { dx: number; dy: number } = { dx: 0, dy: 0 };
-
     simulation: Simulation;
 
-    previousPositions: Map<string, { x: number; y: number }> = new Map();
-    lerpAlpha = 1;
+    myId: string | null = null;
+    connected = false;
 
-    localPlayerTickPosition: { x: number; y: number } | null = null;
+    keys: Record<string, boolean> = {};
+    lastSnapshotTick = 0;
+
+    reconciler: Reconciliator<Intents.Move, GameStateUpdate>;
+    previousPositions: Map<string, { x: number; y: number }> = new Map();
+    lerpAlpha: number = 1;
 
     constructor() {
-        this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        this.ctx = this.canvas.getContext('2d')!;
-        this.status = document.getElementById('status')!;
+        this.canvas = document.getElementById("gameCanvas") as HTMLCanvasElement;
+        this.ctx = this.canvas.getContext("2d")!;
 
-        this.simulation = new Simulation({
-            onTick: (deltaTime, tick) => {
-                this.handleTickInput();
+        this.simulation = new Simulation();
+
+        // Hook into tick event to apply input and send intents
+        this.simulation.events.on('tick', ({ tick }) => this.tick(tick));
+
+        this.reconciler = new Reconciliator({
+            onLoadState: (state) => this.loadSnapshot(state),
+            onReplay: (intents) => {
+                if (intents.length > 0) {
+                    console.log(`Replaying ${intents.length} intents for prediction correction.`);
+                }
+
+                // Replay each intent: apply velocity + step
+                // This must match the tick() logic exactly
+                for (const intent of intents) {
+                    this.simulation.applyVelocity(this.myId!, intent);
+                    this.simulation.step();
+                }
             },
         });
-
-        this.lerpAlpha = 3 * (1 / this.simulation.ticker.rate);
 
         this.setupInput();
         this.connect();
     }
 
-    connect() {
-        this.updateStatus('connecting', 'Connecting...');
+    /* ================================
+       Networking
+    ================================ */
 
+    connect() {
         const transport = new BrowserWebSocketClientTransport(`ws://mococa:${WS_PORT}`);
 
         this.network = new ClientNetwork({
             transport,
             intentRegistry: createIntentRegistry(),
             snapshotRegistry: createSnapshotRegistry(),
+            rpcRegistry: createRpcRegistry(),
             config: {
                 debug: false,
                 heartbeatInterval: 15000,
@@ -67,88 +91,116 @@ class GameClient {
 
         this.network.onConnect(() => {
             this.connected = true;
-            this.updateStatus('connected', 'Connected');
-            this.startGameLoop();
+            console.log('connected.');
+
+            const id = generateId({ prefix: 'player_', size: 16 });
+            this.myId = id;
+            this.network.sendRpc(RPCs.SpawnPlayer, { id });
+            this.simulation.spawn(id);
+            this.start();
         });
 
-        this.network.onDisconnect(() => {
-            this.connected = false;
-            this.updateStatus('disconnected', 'Disconnected');
-        });
+        this.network.onSnapshot("gameState", (snapshot) => {
+            if (!snapshot.updates) return;
 
-        this.network.onSnapshot<GameStateUpdate>('gameState', (snapshot) => {
-            this.handleSnapshot(snapshot);
+            this.reconciler.onSnapshot({
+                tick: snapshot.tick,
+                state: snapshot.updates as GameStateUpdate,
+            });
         });
     }
 
-    updateStatus(className: string, text: string) {
-        this.status.className = className;
-        this.status.textContent = text;
-    }
+    /* ================================
+       Input
+    ================================ */
 
     setupInput() {
-        window.addEventListener('keydown', (e) => {
+        window.addEventListener("keydown", e => {
             this.keys[e.key.toLowerCase()] = true;
         });
 
-        window.addEventListener('keyup', (e) => {
+        window.addEventListener("keyup", e => {
             this.keys[e.key.toLowerCase()] = false;
         });
     }
 
-    getInput() {
-        let dx = 0, dy = 0;
+    readInput() {
+        let vx = 0;
+        let vy = 0;
 
-        if (this.keys['w'] || this.keys['arrowup']) dy -= 1;
-        if (this.keys['s'] || this.keys['arrowdown']) dy += 1;
-        if (this.keys['a'] || this.keys['arrowleft']) dx -= 1;
-        if (this.keys['d'] || this.keys['arrowright']) dx += 1;
+        if (this.keys["w"] || this.keys["arrowup"]) vy -= 1;
+        if (this.keys["s"] || this.keys["arrowdown"]) vy += 1;
+        if (this.keys["a"] || this.keys["arrowleft"]) vx -= 1;
+        if (this.keys["d"] || this.keys["arrowright"]) vx += 1;
 
-        return { dx, dy };
+        return { vx, vy };
     }
 
-    handleSnapshot(snapshot: { tick: number; updates: Partial<GameStateUpdate> }) {
-        if (!this.connected) {
-            this.connected = true;
-            this.updateStatus('connected', 'Connected');
-            this.startGameLoop();
-        }
+    /* ================================
+       Game Loop
+    ================================ */
 
-        this.loadAuthoritativeState(snapshot.updates as GameStateUpdate);
+    start() {
+        let last = performance.now();
+
+        const loop = (now: number) => {
+            const dt = (now - last) / 1000;
+            last = now;
+
+            this.simulation.update(dt);
+            this.render();
+
+            requestAnimationFrame(loop);
+        };
+
+        requestAnimationFrame(loop);
     }
 
-    loadAuthoritativeState(players: GameStateUpdate) {
-        if (this.myId === null && players.length > 0) {
-            const lastPlayer = players[players.length - 1];
-            this.myId = lastPlayer.id;
-            this.simulation.localPlayerId = this.myId;
-        }
+    tick(tick: number) {
+        if (!this.connected || !this.myId) return;
 
-        for (const playerData of players) {
-            let player = this.simulation.players.get(playerData.id);
+        const input = this.readInput();
+
+        // Create intent
+        const intent: Intents.Move = {
+            kind: Intents.Move.kind,
+            tick,
+            vx: input.vx,
+            vy: input.vy,
+        };
+
+        // Send intent to server and track locally
+        this.network.sendIntent(intent);
+        this.reconciler.trackIntent(tick, intent);
+
+        // Apply client-side prediction (must match replay logic)
+        this.simulation.applyVelocity(this.myId, intent);
+        this.simulation.step();
+    }
+
+    /* ================================
+       Snapshot Handling
+    ================================ */
+
+    loadSnapshot(state: GameStateUpdate) {
+        for (const p of state) {
+            let player = this.simulation.players.get(p.id);
+
             if (!player) {
-                player = {
-                    id: playerData.id,
-                    x: playerData.x,
-                    y: playerData.y,
-                    vx: 0,
-                    vy: 0,
-                    color: playerData.color,
-                };
-                this.simulation.players.set(playerData.id, player);
-                if (playerData.id === this.myId) {
-                    this.localPlayerTickPosition = { x: playerData.x, y: playerData.y };
-                }
-            } else {
-                player.x = playerData.x;
-                player.y = playerData.y;
-                if (playerData.id === this.myId && this.localPlayerTickPosition) {
-                    this.localPlayerTickPosition.x = playerData.x;
-                    this.localPlayerTickPosition.y = playerData.y;
-                }
+                // Spawn new player from server snapshot
+                player = this.simulation.spawn(p.id);
             }
+
+            // Update position from authoritative server state
+            player.x = p.x;
+            player.y = p.y;
+            player.color = p.color;
         }
     }
+
+    /* ================================
+       Rendering
+    ================================ */
 
     renderGrid() {
         this.ctx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
@@ -217,52 +269,6 @@ class GameClient {
         this.renderGrid();
         this.renderPlayers();
         this.renderDebugInfo();
-    }
-
-    startGameLoop() {
-        let lastTime = performance.now();
-
-        const loop = (currentTime: number) => {
-            const deltaTime = (currentTime - lastTime) / 1000;
-            lastTime = currentTime;
-
-            this.captureInput();
-            this.simulation.update(deltaTime);
-            this.updateLocalPlayerPosition(deltaTime);
-            this.render();
-
-            requestAnimationFrame(loop);
-        };
-
-        requestAnimationFrame(loop);
-    }
-
-    updateLocalPlayerPosition(deltaTime: number) {
-        // No local prediction - just use server position
-    }
-
-    captureInput() {
-        this.currentInput = this.getInput();
-    }
-
-    handleTickInput() {
-        if (!this.connected) return;
-
-        const input = this.currentInput;
-
-        // Send raw input direction (-1, 0, or 1), server will normalize
-        const intent: Intents.Move = {
-            kind: Intents.Move.kind,
-            tick: this.simulation.ticker.tickCount,
-            vx: input.dx,
-            vy: input.dy,
-        };
-
-        if (this.network.hasIntentChanged(intent, (last, current) =>
-            last.vx !== current.vx || last.vy !== current.vy
-        )) {
-            this.network.sendIntent(intent);
-        }
     }
 }
 

@@ -4,27 +4,38 @@ import {
     defineIntent,
     IntentRegistry,
     SnapshotRegistry,
-    PooledCodec,
     EventSystem,
+    PooledCodec,
+    defineRpc,
+    RpcRegistry
 } from "../../src";
 
-// Game constants
+/* ================================
+   Constants
+================================ */
 export const WORLD_WIDTH = 800;
 export const WORLD_HEIGHT = 600;
 export const PLAYER_SIZE = 20;
 export const PLAYER_SPEED = 200;
-export const TICK_RATE = 16;
+export const TICK_RATE = 24;
+export const WS_PORT = 3007;
 
+/* ================================
+   Intents
+================================ */
 export enum IntentKind {
     Move = 0x1,
+}
+
+export enum Method {
+    SpawnPlayer = 'spawn',
 }
 
 export namespace Intents {
     export const Move = defineIntent({
         kind: IntentKind.Move,
         schema: {
-            // Raw input direction: -1, 0, or 1
-            vx: BinaryCodec.i8,
+            vx: BinaryCodec.i8, // -1, 0, 1
             vy: BinaryCodec.i8,
         },
     });
@@ -32,157 +43,171 @@ export namespace Intents {
     export type Move = typeof Move.type;
 }
 
-// Snapshot update types (use array directly, not wrapped in object)
+export namespace RPCs {
+    export const SpawnPlayer = defineRpc({
+        method: Method.SpawnPlayer,
+        schema: {
+            id: BinaryCodec.string(16),
+        },
+    });
+}
+
+/* ================================
+   Types
+================================ */
+export type Player = {
+    id: string;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    color: string;
+};
+
 export type GameStateUpdate = Array<{
     id: string;
     x: number;
     y: number;
-    vx: number;
-    vy: number;
     color: string;
 }>;
 
-export interface Player {
-    id: string;
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    color: string;
-}
-
+/* ================================
+   Simulation
+================================ */
 export class Simulation {
-    ticker: FixedTicker;
-    players: Map<string, Player> = new Map();
-    localPlayerId?: string; // Track which player is local (for client-side prediction)
-    events: EventSystem<[
-        ['change-direction', { id: string; vx: number; vy: number; tick: number }],
-    ]> = new EventSystem({ events: ['change-direction'] });
+    readonly ticker: FixedTicker;
+    readonly players = new Map<string, Player>();
+    readonly events: EventSystem<[
+        ['pre-tick', { tick: number }],
+        ['tick', { tick: number }],
+        ['post-tick', { tick: number }],
+    ]> = new EventSystem({ events: ['pre-tick', 'tick', 'post-tick'] });
 
-    constructor({
-        onTick,
-        onTickAfter,
-    }: {
-        onTick?: (deltaTime: number, tick: number) => void;
-        onTickAfter?: (deltaTime: number, tick: number) => void;
-    } = {}) {
-
+    constructor() {
         this.ticker = new FixedTicker({
             rate: TICK_RATE,
-            onTick: (deltaTime, tick) => {
-                // Let the callback run BEFORE the tick, so input can be applied first
-                onTick?.(deltaTime, tick ?? 0);
-
-                // Now process the tick with the updated input
-                this.tick(deltaTime);
-
-                // After tick callback (for sending snapshots, etc.)
-                onTickAfter?.(deltaTime, tick ?? 0);
+            onTick: (_, tick = 0) => {
+                this.events.emit('pre-tick', { tick });
+                this.events.emit('tick', { tick });
+                this.events.emit('post-tick', { tick });
             },
         });
     }
 
-    update(deltaTime: number): void {
-        this.ticker.tick(deltaTime);
+    /** Update ticker at the provided rate with a delta time */
+    update(delta: number) {
+        this.ticker.tick(delta);
     }
 
-    tick(deltaTime: number): void {
-        // Update all player positions based on their velocity (including local player)
-        for (const player of this.players.values()) {
-            player.x += player.vx * deltaTime;
-            player.y += player.vy * deltaTime;
-
-            // Keep players in bounds
-            player.x = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_WIDTH - PLAYER_SIZE / 2, player.x));
-            player.y = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_HEIGHT - PLAYER_SIZE / 2, player.y));
-        }
-    }
-
+    /** Spawn a new player */
     spawn(id: string): Player {
-        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE'];
-        const color = colors[Math.floor(Math.random() * colors.length)];
-
         const player: Player = {
             id,
             x: WORLD_WIDTH / 2,
             y: WORLD_HEIGHT / 2,
             vx: 0,
             vy: 0,
-            color,
+            color: randomColor(),
         };
+
         this.players.set(id, player);
         return player;
     }
 
-    removePlayer(id: string): void {
+    /** Remove a player */
+    remove(id: string) {
         this.players.delete(id);
     }
 
-    setPlayerVelocity(id: string, vx: number, vy: number): boolean {
+    /** Apply an intent (client or replay) */
+    applyVelocity(id: string, intent: Omit<Intents.Move, 'kind' | 'tick'>) {
         const player = this.players.get(id);
-        if (!player) return false;
+        if (!player) return;
 
-        // Store old velocity to detect changes
-        const oldVx = player.vx;
-        const oldVy = player.vy;
+        const { vx, vy } = intent;
 
-        const length = Math.hypot(vx, vy);
-        if (!length) {
+        if (vx === 0 && vy === 0) {
             player.vx = 0;
             player.vy = 0;
-        } else {
-            const normalizedVx = vx / length;
-            const normalizedVy = vy / length;
-            player.vx = normalizedVx * PLAYER_SPEED;
-            player.vy = normalizedVy * PLAYER_SPEED;
+            return;
         }
 
-        // Emit velocity change event if velocity actually changed
-        // Pass the RAW input direction, not the calculated velocity
-        if ((player.vx !== oldVx || player.vy !== oldVy)) {
-            this.events.emit('change-direction', { id, vx, vy, tick: this.ticker.tickCount });
-            return true;
-        }
-
-        return false;
+        const len = Math.hypot(vx, vy);
+        player.vx = (vx / len) * PLAYER_SPEED;
+        player.vy = (vy / len) * PLAYER_SPEED;
     }
 
-    getGameState(): GameStateUpdate {
+    /** Advance simulation by 1 tick */
+    step() {
+        const dt = 1 / TICK_RATE;
+
+        for (const p of this.players.values()) {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+
+            // Clamp
+            p.x = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_WIDTH - PLAYER_SIZE / 2, p.x));
+            p.y = Math.max(PLAYER_SIZE / 2, Math.min(WORLD_HEIGHT - PLAYER_SIZE / 2, p.y));
+        }
+    }
+
+    /** Authoritative snapshot */
+    getSnapshot(): GameStateUpdate {
         return Array.from(this.players.values()).map(p => ({
             id: p.id,
             x: p.x,
             y: p.y,
-            vx: p.vx,
-            vy: p.vy,
             color: p.color,
         }));
     }
 }
 
-// Create intent registry (shared between client and server)
-export function createIntentRegistry(): IntentRegistry {
-    const registry = new IntentRegistry();
-    registry.register(Intents.Move);
+/* ================================
+   Registries
+================================ */
 
-    return registry;
+export function createIntentRegistry(): IntentRegistry {
+    const reg = new IntentRegistry();
+    reg.register(Intents.Move);
+    return reg;
 }
 
-// Create snapshot registry for game state updates
 export function createSnapshotRegistry(): SnapshotRegistry<GameStateUpdate> {
-    const registry = new SnapshotRegistry<GameStateUpdate>();
+    const reg = new SnapshotRegistry<GameStateUpdate>();
 
-    // Define the player snapshot schema
-    const playerSchema = {
-        id: BinaryCodec.string(64),
-        x: BinaryCodec.f32,
-        y: BinaryCodec.f32,
-        vx: BinaryCodec.f32,
-        vy: BinaryCodec.f32,
-        color: BinaryCodec.string(16),
-    };
+    reg.register(
+        "gameState",
+        PooledCodec.array({
+            id: BinaryCodec.string(64),
+            x: BinaryCodec.f32,
+            y: BinaryCodec.f32,
+            color: BinaryCodec.string(16),
+        })
+    );
 
-    // Use PooledCodec.array() - it now works directly as a Codec!
-    registry.register('gameState', PooledCodec.array(playerSchema));
+    return reg;
+}
 
-    return registry;
+
+
+export function createRpcRegistry() {
+    const reg = new RpcRegistry();
+    reg.register(RPCs.SpawnPlayer);
+    return reg;
+}
+
+/* ================================
+   Utils
+================================ */
+function randomColor() {
+    const colors = [
+        "#FF6B6B",
+        "#4ECDC4",
+        "#45B7D1",
+        "#FFA07A",
+        "#98D8C8",
+        "#F7DC6F",
+        "#BB8FCE",
+    ];
+    return colors[(Math.random() * colors.length) | 0];
 }
