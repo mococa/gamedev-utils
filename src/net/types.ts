@@ -117,6 +117,11 @@ export interface QueuedMessage {
 }
 
 /**
+ * Lag simulation configuration for testing network conditions
+ */
+export type LagSimulation = number | { min: number; max: number };
+
+/**
  * Configuration for network message handling
  */
 export interface NetworkConfig {
@@ -162,6 +167,23 @@ export interface NetworkConfig {
 	 * If no message received within this time, connection is considered dead
 	 */
 	heartbeatTimeout?: number;
+
+	/**
+	 * Simulate network lag for testing (client-side only)
+	 * - number: Fixed delay in milliseconds
+	 * - {min, max}: Random delay between min and max milliseconds
+	 * - undefined: No lag simulation (default)
+	 *
+	 * @example
+	 * ```ts
+	 * // Fixed 100ms lag
+	 * lagSimulation: 100
+	 *
+	 * // Random lag between 50-150ms
+	 * lagSimulation: { min: 50, max: 150 }
+	 * ```
+	 */
+	lagSimulation?: LagSimulation;
 }
 
 /**

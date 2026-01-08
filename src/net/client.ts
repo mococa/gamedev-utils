@@ -4,7 +4,7 @@ import type { Snapshot } from "../protocol/snapshot/snapshot";
 import type { Intent } from "../protocol/intent/intent";
 import type { RpcRegistry } from "../protocol/rpc/rpc-registry";
 import type { DefinedRpc } from "../protocol/rpc/rpc";
-import { MessageType, type TransportAdapter, type NetworkConfig } from "./types";
+import { MessageType, type TransportAdapter, type NetworkConfig, type LagSimulation } from "./types";
 
 /**
  * Configuration for ClientNetwork
@@ -82,6 +82,9 @@ export class ClientNetwork<TSnapshots = unknown> {
 	/** Last time we received a message from server */
 	private lastMessageReceivedAt = Date.now();
 
+	/** Lag simulation configuration */
+	private lagSimulation?: LagSimulation;
+
 	constructor(config: ClientNetworkConfig<TSnapshots>) {
 		this.transport = config.transport;
 		this.intentRegistry = config.intentRegistry;
@@ -95,7 +98,10 @@ export class ClientNetwork<TSnapshots = unknown> {
 			maxSendQueueSize: config.config?.maxSendQueueSize ?? 100,
 			heartbeatInterval: config.config?.heartbeatInterval ?? 30000,
 			heartbeatTimeout: config.config?.heartbeatTimeout ?? 60000,
+			lagSimulation: config.config?.lagSimulation,
 		};
+
+		this.lagSimulation = config.config?.lagSimulation;
 
 		this.setupTransportHandlers();
 		this.setupHeartbeat();
@@ -387,7 +393,18 @@ export class ClientNetwork<TSnapshots = unknown> {
 		}
 
 		this.transport.onMessage((data) => {
-			this.handleMessage(data);
+			const lagDelay = this.getLagDelay();
+
+			if (lagDelay > 0) {
+				// Simulate lag by delaying message handling
+				// IMPORTANT: Copy the data buffer as it may be reused by the transport
+				const dataCopy = new Uint8Array(data);
+				setTimeout(() => {
+					this.handleMessage(dataCopy);
+				}, lagDelay);
+			} else {
+				this.handleMessage(data);
+			}
 		});
 
 		this.transport.onClose(() => {
@@ -630,6 +647,23 @@ export class ClientNetwork<TSnapshots = unknown> {
 		// Only increment if we're allowing this message
 		this.messageCount++;
 		return true;
+	}
+
+	/**
+	 * Calculate lag delay based on lag simulation configuration
+	 */
+	private getLagDelay(): number {
+		if (!this.lagSimulation) {
+			return 0;
+		}
+
+		if (typeof this.lagSimulation === 'number') {
+			return this.lagSimulation;
+		}
+
+		// Random delay between min and max
+		const { min, max } = this.lagSimulation;
+		return min + Math.random() * (max - min);
 	}
 
 	/**
