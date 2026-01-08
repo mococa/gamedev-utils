@@ -108,7 +108,7 @@ class GameServer {
         });
 
         // Handle spawn RPC
-        this.network.onRpc(RPCs.SpawnPlayer, (peerId, rpc) => {
+        this.network.onRPC(RPCs.SpawnPlayer, (peerId, rpc) => {
             console.log(`RPC SpawnPlayer received from peer=${peerId.substring(0, 8)} with id=${rpc.id}`);
 
             // Spawn player with client-provided ID

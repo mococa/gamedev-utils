@@ -237,7 +237,7 @@ export class ClientNetwork<TSnapshots = unknown> {
 	 * client.sendRpc(BuyItem, { itemId: 'long_sword' });
 	 * ```
 	 */
-	sendRpc<TSchema extends Record<string, any>>(rpc: DefinedRPC<TSchema>, data: TSchema): void {
+	sendRPC<TSchema extends Record<string, any>>(rpc: DefinedRPC<TSchema>, data: TSchema): void {
 		if (!this.rpcRegistry) {
 			throw new Error('RpcRegistry not configured. Pass rpcRegistry to ClientNetworkConfig.');
 		}
@@ -292,7 +292,7 @@ export class ClientNetwork<TSnapshots = unknown> {
 	 * });
 	 * ```
 	 */
-	onRpc<TSchema extends Record<string, any>>(
+	onRPC<TSchema extends Record<string, any>>(
 		rpc: DefinedRPC<TSchema>,
 		handler: (data: TSchema) => void
 	): () => void {
@@ -484,7 +484,7 @@ export class ClientNetwork<TSnapshots = unknown> {
 				this.log("Received heartbeat from server");
 				break;
 			case MessageType.CUSTOM:
-				this.handleRpc(payload);
+				this.handleRPC(payload);
 				break;
 			default:
 				this.log(`Unknown message type: ${messageType}`);
@@ -522,7 +522,7 @@ export class ClientNetwork<TSnapshots = unknown> {
 	/**
 	 * Handle incoming RPC message from server
 	 */
-	private handleRpc(data: Uint8Array): void {
+	private handleRPC(data: Uint8Array): void {
 		if (!this.rpcRegistry) {
 			this.log("Received RPC but RpcRegistry not configured");
 			return;

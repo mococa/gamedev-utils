@@ -149,7 +149,7 @@ export class GameClient {
 
             const id = generateId({ prefix: 'player_', size: 16 });
             this.myId = id;
-            this.network.sendRpc(RPCs.SpawnPlayer, { id });
+            this.network.sendRPC(RPCs.SpawnPlayer, { id });
             this.simulation.spawn(id);
             this.start();
         });

@@ -255,7 +255,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * server.sendRpc(peerId, MatchCountdown, { secondsRemaining: 10 });
 	 * ```
 	 */
-	sendRpc<TSchema extends Record<string, any>>(
+	sendRPC<TSchema extends Record<string, any>>(
 		peerId: string,
 		rpc: DefinedRPC<TSchema>,
 		data: TSchema,
@@ -330,7 +330,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 		priority: MessagePriority = MessagePriority.NORMAL
 	): void {
 		for (const peerId of this.getPeerIds()) {
-			this.sendRpc(peerId, rpc, data, priority);
+			this.sendRPC(peerId, rpc, data, priority);
 		}
 	}
 
@@ -355,7 +355,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * });
 	 * ```
 	 */
-	onRpc<TSchema extends Record<string, any>>(
+	onRPC<TSchema extends Record<string, any>>(
 		rpc: DefinedRPC<TSchema>,
 		handler: (peerId: string, data: TSchema) => void
 	): () => void {
@@ -978,7 +978,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 				this.log(`Received heartbeat from peer ${peerId}`);
 				break;
 			case MessageType.CUSTOM:
-				this.handleRpc(peerId, payload);
+				this.handleRPC(peerId, payload);
 				break;
 			default:
 				this.log(`Unknown message type ${messageType} from peer ${peerId}`);
@@ -1035,7 +1035,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	/**
 	 * Handle incoming RPC message from a peer
 	 */
-	private handleRpc(peerId: string, data: Uint8Array): void {
+	private handleRPC(peerId: string, data: Uint8Array): void {
 		if (!this.rpcRegistry) {
 			this.log("Received RPC but RpcRegistry not configured");
 			return;
