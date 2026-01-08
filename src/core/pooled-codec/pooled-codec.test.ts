@@ -684,3 +684,179 @@ describe("PooledCodec - Zero-Copy Encoding", () => {
     expect(decoded.enemies.length).toBe(3);
   });
 });
+
+/**
+ * Tests for DataView reuse optimization in PooledCodec.array()
+ *
+ * These tests verify that the shared encodeView/decodeView optimization
+ * is safe under various usage patterns that might seem problematic.
+ */
+describe("PooledCodec.array() - DataView Reuse Safety", () => {
+  const playerSchema = {
+    id: BinaryCodec.u32,
+    health: BinaryCodec.u8,
+  };
+  test("same ArrayField instance used in nested schema (sequential)", () => {
+    // Scenario: Reusing same ArrayField in multiple schema fields
+    const playerArray = PooledCodec.array(playerSchema);
+    const teamSchema = {
+      teamA: playerArray, // Same instance
+      teamB: playerArray, // Same instance
+    };
+    const codec = new PooledCodec(teamSchema);
+    const data = {
+      teamA: [
+        { id: 1, health: 100 },
+        { id: 2, health: 80 },
+      ],
+      teamB: [
+        { id: 3, health: 90 },
+        { id: 4, health: 70 },
+      ],
+    };
+    const encoded = codec.encode(data);
+    const decoded = codec.decode(encoded);
+    // Verify no corruption
+    expect(decoded.teamA[0].id).toBe(1);
+    expect(decoded.teamA[0].health).toBe(100);
+    expect(decoded.teamA[1].id).toBe(2);
+    expect(decoded.teamA[1].health).toBe(80);
+    expect(decoded.teamB[0].id).toBe(3);
+    expect(decoded.teamB[0].health).toBe(90);
+    expect(decoded.teamB[1].id).toBe(4);
+    expect(decoded.teamB[1].health).toBe(70);
+  });
+  test("rapid sequential encode/decode (simulates game loop)", () => {
+    // Scenario: High-frequency encoding like multiplayer snapshots
+    const playerArray = PooledCodec.array(playerSchema);
+    const iterations = 1000;
+    for (let i = 0; i < iterations; i++) {
+      const data = [
+        { id: i, health: 100 },
+        { id: i + 1, health: 80 },
+      ];
+      const encoded = playerArray.encode(data);
+      const decoded = playerArray.decode(encoded);
+      expect(decoded[0].id).toBe(i);
+      expect(decoded[0].health).toBe(100);
+      expect(decoded[1].id).toBe(i + 1);
+      expect(decoded[1].health).toBe(80);
+    }
+  });
+  test("async encode/decode with Promise.all (no corruption)", async () => {
+    // Scenario: Multiple async operations using same ArrayField
+    const playerArray = PooledCodec.array(playerSchema);
+    async function encodeTask(taskId: number) {
+      return playerArray.encode([
+        { id: taskId * 10, health: 100 },
+        { id: taskId * 10 + 1, health: 80 },
+      ]);
+    }
+    // Run 10 encode operations "concurrently"
+    const results = await Promise.all([
+      encodeTask(1),
+      encodeTask(2),
+      encodeTask(3),
+      encodeTask(4),
+      encodeTask(5),
+      encodeTask(6),
+      encodeTask(7),
+      encodeTask(8),
+      encodeTask(9),
+      encodeTask(10),
+    ]);
+    // Decode and verify each result
+    for (let i = 0; i < results.length; i++) {
+      const decoded = playerArray.decode(results[i]);
+      const expectedId = (i + 1) * 10;
+      expect(decoded[0].id).toBe(expectedId);
+      expect(decoded[0].health).toBe(100);
+      expect(decoded[1].id).toBe(expectedId + 1);
+      expect(decoded[1].health).toBe(80);
+    }
+  });
+  test("encode while decode is queued (microtask interleaving)", async () => {
+    // Scenario: Encode and decode queued as microtasks
+    const playerArray = PooledCodec.array(playerSchema);
+    let encoded1: Uint8Array | null = null;
+    let encoded2: Uint8Array | null = null;
+    queueMicrotask(() => {
+      encoded1 = playerArray.encode([{ id: 1, health: 100 }]);
+    });
+    queueMicrotask(() => {
+      encoded2 = playerArray.encode([{ id: 2, health: 200 }]);
+    });
+    // Wait for microtasks to complete
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(encoded1).not.toBeNull();
+    expect(encoded2).not.toBeNull();
+    const decoded1 = playerArray.decode(encoded1!);
+    const decoded2 = playerArray.decode(encoded2!);
+    expect(decoded1[0].id).toBe(1);
+    expect(decoded1[0].health).toBe(100);
+    expect(decoded2[0].id).toBe(2);
+    expect(decoded2[0].health).toBe(200);
+  });
+  test("buffer pool with different-sized arrays (reuse correctness)", () => {
+    // Scenario: Encoding arrays of different sizes (buffer pool behavior)
+    const playerArray = PooledCodec.array(playerSchema);
+    // Small array
+    const small = playerArray.encode([{ id: 1, health: 100 }]);
+    const decodedSmall = playerArray.decode(small);
+    expect(decodedSmall).toHaveLength(1);
+    expect(decodedSmall[0].id).toBe(1);
+    // Large array
+    const largeData = Array.from({ length: 100 }, (_, i) => ({
+      id: i,
+      health: 100,
+    }));
+    const large = playerArray.encode(largeData);
+    const decodedLarge = playerArray.decode(large);
+    expect(decodedLarge).toHaveLength(100);
+    expect(decodedLarge[0].id).toBe(0);
+    expect(decodedLarge[99].id).toBe(99);
+    // Small again (verifies buffer pool reuse doesn't corrupt)
+    const small2 = playerArray.encode([{ id: 999, health: 50 }]);
+    const decodedSmall2 = playerArray.decode(small2);
+    expect(decodedSmall2).toHaveLength(1);
+    expect(decodedSmall2[0].id).toBe(999);
+    expect(decodedSmall2[0].health).toBe(50);
+  });
+  test("encodeInto with different buffers (zero-copy safety)", () => {
+    // Scenario: Using encodeInto with external buffers
+    const playerArray = PooledCodec.array(playerSchema);
+    const data = [
+      { id: 1, health: 100 },
+      { id: 2, health: 80 },
+    ];
+    // Calculate size and allocate buffer
+    const size = playerArray.calculateSize(data);
+    const buffer = new Uint8Array(size);
+    // Encode directly into buffer
+    const bytesWritten = playerArray.encodeInto(data, buffer, 0);
+    expect(bytesWritten).toBe(size);
+    // Decode and verify
+    const decoded = playerArray.decode(buffer);
+    expect(decoded[0].id).toBe(1);
+    expect(decoded[0].health).toBe(100);
+    expect(decoded[1].id).toBe(2);
+    expect(decoded[1].health).toBe(80);
+  });
+  test("stress test: 10k rapid encode/decode cycles", () => {
+    // Scenario: Extreme throughput test
+    const playerArray = PooledCodec.array(playerSchema);
+    for (let i = 0; i < 10000; i++) {
+      const data = [
+        { id: i % 256, health: 100 },
+        { id: (i + 1) % 256, health: 80 },
+      ];
+      const encoded = playerArray.encode(data);
+      const decoded = playerArray.decode(encoded);
+      // Spot check every 1000th iteration
+      if (i % 1000 === 0) {
+        expect(decoded[0].id).toBe(i % 256);
+        expect(decoded[0].health).toBe(100);
+      }
+    }
+  });
+});
