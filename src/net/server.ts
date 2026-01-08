@@ -3,7 +3,7 @@ import type { SnapshotRegistry } from "../protocol/snapshot/snapshot-registry";
 import type { Snapshot } from "../protocol/snapshot/snapshot";
 import type { Intent } from "../protocol/intent/intent";
 import type { RpcRegistry } from "../protocol/rpc/rpc-registry";
-import type { DefinedRpc } from "../protocol/rpc/rpc";
+import type { DefinedRPC } from "../protocol/rpc/rpc";
 import { MessageType, MessagePriority, type PeerState, type ServerTransportAdapter, type TransportAdapter, type NetworkConfig, type QueuedMessage } from "./types";
 import { MessageWrapperPool } from "./buffer-pool";
 import { DefinedIntent } from "../protocol";
@@ -257,7 +257,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 */
 	sendRpc<TSchema extends Record<string, any>>(
 		peerId: string,
-		rpc: DefinedRpc<TSchema>,
+		rpc: DefinedRPC<TSchema>,
 		data: TSchema,
 		priority: MessagePriority = MessagePriority.NORMAL
 	): void {
@@ -325,7 +325,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * ```
 	 */
 	sendRpcBroadcast<TSchema extends Record<string, any>>(
-		rpc: DefinedRpc<TSchema>,
+		rpc: DefinedRPC<TSchema>,
 		data: TSchema,
 		priority: MessagePriority = MessagePriority.NORMAL
 	): void {
@@ -356,7 +356,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * ```
 	 */
 	onRpc<TSchema extends Record<string, any>>(
-		rpc: DefinedRpc<TSchema>,
+		rpc: DefinedRPC<TSchema>,
 		handler: (peerId: string, data: TSchema) => void
 	): () => void {
 		if (!this.rpcRegistry) {

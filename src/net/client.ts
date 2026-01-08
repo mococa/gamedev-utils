@@ -3,7 +3,7 @@ import type { SnapshotRegistry } from "../protocol/snapshot/snapshot-registry";
 import type { Snapshot } from "../protocol/snapshot/snapshot";
 import type { Intent } from "../protocol/intent/intent";
 import type { RpcRegistry } from "../protocol/rpc/rpc-registry";
-import type { DefinedRpc } from "../protocol/rpc/rpc";
+import type { DefinedRPC } from "../protocol/rpc/rpc";
 import { MessageType, type TransportAdapter, type NetworkConfig, type LagSimulation } from "./types";
 
 /**
@@ -237,7 +237,7 @@ export class ClientNetwork<TSnapshots = unknown> {
 	 * client.sendRpc(BuyItem, { itemId: 'long_sword' });
 	 * ```
 	 */
-	sendRpc<TSchema extends Record<string, any>>(rpc: DefinedRpc<TSchema>, data: TSchema): void {
+	sendRpc<TSchema extends Record<string, any>>(rpc: DefinedRPC<TSchema>, data: TSchema): void {
 		if (!this.rpcRegistry) {
 			throw new Error('RpcRegistry not configured. Pass rpcRegistry to ClientNetworkConfig.');
 		}
@@ -293,7 +293,7 @@ export class ClientNetwork<TSnapshots = unknown> {
 	 * ```
 	 */
 	onRpc<TSchema extends Record<string, any>>(
-		rpc: DefinedRpc<TSchema>,
+		rpc: DefinedRPC<TSchema>,
 		handler: (data: TSchema) => void
 	): () => void {
 		if (!this.rpcRegistry) {

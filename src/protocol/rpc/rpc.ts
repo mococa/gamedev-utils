@@ -21,7 +21,7 @@ export interface RpcCodec<T> {
 /**
  * Runtime RPC message structure
  */
-export interface Rpc<T = unknown> {
+export interface RPC<T = unknown> {
 	method: string;
 	data: T;
 }
@@ -30,7 +30,7 @@ export interface Rpc<T = unknown> {
  * Compile-time RPC definition with type safety
  * Created by defineRpc() helper
  */
-export interface DefinedRpc<TSchema extends Record<string, any>> {
+export interface DefinedRPC<TSchema extends Record<string, any>> {
 	method: string;
 	codec: RpcCodec<TSchema>;
 	type: TSchema; // Phantom type for inference

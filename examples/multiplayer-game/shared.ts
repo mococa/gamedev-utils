@@ -6,7 +6,7 @@ import {
     SnapshotRegistry,
     EventSystem,
     PooledCodec,
-    defineRpc,
+    defineRPC,
     RpcRegistry
 } from "../../src";
 
@@ -44,7 +44,7 @@ export namespace Intents {
 }
 
 export namespace RPCs {
-    export const SpawnPlayer = defineRpc({
+    export const SpawnPlayer = defineRPC({
         method: Method.SpawnPlayer,
         schema: {
             id: BinaryCodec.string(16),

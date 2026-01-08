@@ -1,4 +1,4 @@
-import type { DefinedRpc, RpcCodec } from './rpc';
+import type { DefinedRPC, RpcCodec } from './rpc';
 
 /**
  * Registry for managing RPC definitions with binary encoding/decoding
@@ -47,7 +47,7 @@ export class RpcRegistry {
 	 * registry.register(MatchCountdown);
 	 * ```
 	 */
-	register<TSchema extends Record<string, any>>(rpc: DefinedRpc<TSchema>): void {
+	register<TSchema extends Record<string, any>>(rpc: DefinedRPC<TSchema>): void {
 		if (this.codecs.has(rpc.method)) {
 			throw new Error(`RPC "${rpc.method}" is already registered`);
 		}
@@ -75,7 +75,7 @@ export class RpcRegistry {
 	 * });
 	 * ```
 	 */
-	encode<TSchema extends Record<string, any>>(rpc: DefinedRpc<TSchema>, data: TSchema): Uint8Array {
+	encode<TSchema extends Record<string, any>>(rpc: DefinedRPC<TSchema>, data: TSchema): Uint8Array {
 		const codec = this.codecs.get(rpc.method);
 		if (!codec) {
 			throw new Error(`RPC "${rpc.method}" is not registered`);

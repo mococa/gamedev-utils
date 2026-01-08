@@ -1,4 +1,4 @@
-import type { DefinedRpc, RpcCodec } from "./rpc";
+import type { DefinedRPC, RpcCodec } from "./rpc";
 import type { Schema } from "../../core/binary-codec";
 import { BinaryCodec } from "../../core/binary-codec";
 
@@ -94,9 +94,9 @@ class RpcCodecImpl<T extends object> implements RpcCodec<T> {
  * });
  * ```
  */
-export function defineRpc<S extends Record<string, any>>(
+export function defineRPC<S extends Record<string, any>>(
 	definition: RpcDefinition<S>
-): DefinedRpc<InferRpcType<S>> {
+): DefinedRPC<InferRpcType<S>> {
 	type RpcType = InferRpcType<S>;
 
 	// Create the schema from definition
