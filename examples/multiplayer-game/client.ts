@@ -230,8 +230,8 @@ export class GameClient {
 
             const prev = this.previousPositions.get(playerId);
             if (prev) {
-                x = lerp(prev.x, player.x, this.lerpAlpha);
-                y = lerp(prev.y, player.y, this.lerpAlpha);
+                x = lerp(prev.x, player.x, this.simulation.ticker.alpha);
+                y = lerp(prev.y, player.y, this.simulation.ticker.alpha);
                 prev.x = x;
                 prev.y = y;
             } else if (playerId !== this.myId) {
