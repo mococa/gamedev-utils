@@ -27,7 +27,7 @@ export class FixedTicker {
    * @description
    * Interval in milliseconds per tick
    */
-  private intervalMs: number;
+  intervalMs: number;
 
   /**
    * @description
