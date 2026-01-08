@@ -372,12 +372,19 @@ export class ClientNetwork<TSnapshots = unknown> {
 	 * Setup transport event handlers
 	 */
 	private setupTransportHandlers(): void {
-		this.transport.onOpen(() => {
-			this.log("Connected to server");
+		// Setup open handler if transport supports it
+		if (this.transport.onOpen) {
+			this.transport.onOpen(() => {
+				this.log("Connected to server");
+				this.connected = true;
+				this.lastMessageReceivedAt = Date.now();
+				this.notifyConnectHandlers();
+			});
+		} else {
+			// If transport doesn't support onOpen, assume already connected
 			this.connected = true;
 			this.lastMessageReceivedAt = Date.now();
-			this.notifyConnectHandlers();
-		});
+		}
 
 		this.transport.onMessage((data) => {
 			this.handleMessage(data);
