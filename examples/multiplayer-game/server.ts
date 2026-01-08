@@ -112,8 +112,19 @@ class GameServer {
             console.log(`RPC SpawnPlayer received from peer=${peerId.substring(0, 8)} with id=${rpc.id}`);
 
             // Spawn player with client-provided ID
-            this.simulation.spawn(rpc.id);
+            const { x, y, color } = this.simulation.spawn(rpc.id);
             this.playerIds.set(peerId, rpc.id);
+
+            this.network.sendRPC(
+                peerId,
+                RPCs.PlayerSpawned,
+                {
+                    id: rpc.id,
+                    x,
+                    y,
+                    color,
+                },
+            );
 
             // Send initial game state to the new player
             const gameState = this.simulation.getSnapshot();

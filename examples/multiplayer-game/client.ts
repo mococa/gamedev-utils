@@ -150,8 +150,21 @@ export class GameClient {
             const id = generateId({ prefix: 'player_', size: 16 });
             this.myId = id;
             this.network.sendRPC(RPCs.SpawnPlayer, { id });
-            this.simulation.spawn(id);
             this.start();
+        });
+
+        this.network.onRPC(RPCs.PlayerSpawned, (rpc) => {
+            if (!this.simulation.players.has(rpc.id)) {
+                console.log(`RPC SpawnPlayer received for id=${rpc.id}`);
+                const player = this.simulation.spawn(rpc.id);
+                player.x = rpc.x;
+                player.y = rpc.y;
+                player.color = rpc.color;
+            }
+
+            if (rpc.id === this.myId) {
+                console.log(`Spawned own player with id=${rpc.id}`);
+            }
         });
 
         this.network.onSnapshot("gameState", (snapshot) => {

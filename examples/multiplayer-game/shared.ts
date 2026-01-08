@@ -29,6 +29,7 @@ export enum IntentKind {
 
 export enum Method {
     SpawnPlayer = 'spawn',
+    PlayerSpawned = 'player-spawned',
 }
 
 export namespace Intents {
@@ -48,6 +49,16 @@ export namespace RPCs {
         method: Method.SpawnPlayer,
         schema: {
             id: BinaryCodec.string(16),
+        },
+    });
+
+    export const PlayerSpawned = defineRPC({
+        method: Method.PlayerSpawned,
+        schema: {
+            id: BinaryCodec.string(16),
+            x: BinaryCodec.f32,
+            y: BinaryCodec.f32,
+            color: BinaryCodec.string(16),
         },
     });
 }
@@ -193,6 +204,7 @@ export function createSnapshotRegistry(): SnapshotRegistry<GameStateUpdate> {
 export function createRpcRegistry() {
     const reg = new RpcRegistry();
     reg.register(RPCs.SpawnPlayer);
+    reg.register(RPCs.PlayerSpawned);
     return reg;
 }
 
