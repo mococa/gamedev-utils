@@ -128,6 +128,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 			enableBufferPooling: config.config?.enableBufferPooling ?? true,
 			heartbeatInterval: config.config?.heartbeatInterval ?? 30000,
 			heartbeatTimeout: config.config?.heartbeatTimeout ?? 60000,
+			lagSimulation: config.config?.lagSimulation ?? 0,
 		};
 
 		// Initialize message pool if buffer pooling is enabled
