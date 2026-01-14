@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { RpcRegistry } from "./rpc-registry";
-import { defineRpc } from "./define-rpc";
+import { defineRPC } from "./define-rpc";
 import { BinaryCodec } from "../../core/binary-codec";
 
 // Define RPCs for testing
-const MockRpc = defineRpc({
+const MockRpc = defineRPC({
 	method: 'mockRpc',
 	schema: {
 		value: BinaryCodec.u32,
 	},
 });
 
-const AnotherRpc = defineRpc({
+const AnotherRpc = defineRPC({
 	method: 'anotherRpc',
 	schema: {
 		data: BinaryCodec.string(64),

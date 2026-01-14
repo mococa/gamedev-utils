@@ -242,13 +242,13 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 *
 	 * @template TSchema The RPC data type
 	 * @param peerId The peer to send to
-	 * @param rpc The RPC definition created by defineRpc()
+	 * @param rpc The RPC definition created by defineRPC()
 	 * @param data The RPC data to send
 	 * @param priority Message priority (default: NORMAL)
 	 *
 	 * @example
 	 * ```ts
-	 * const MatchCountdown = defineRpc({
+	 * const MatchCountdown = defineRPC({
 	 *   method: 'matchCountdown',
 	 *   schema: { secondsRemaining: BinaryCodec.u8 }
 	 * });
@@ -316,7 +316,7 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * Send an RPC to all connected peers (broadcast)
 	 *
 	 * @template TSchema The RPC data type
-	 * @param rpc The RPC definition created by defineRpc()
+	 * @param rpc The RPC definition created by defineRPC()
 	 * @param data The RPC data to send
 	 * @param priority Message priority (default: NORMAL)
 	 *
@@ -340,13 +340,13 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * Supports multiple handlers per RPC method
 	 *
 	 * @template TSchema The RPC data type
-	 * @param rpc The RPC definition created by defineRpc()
+	 * @param rpc The RPC definition created by defineRPC()
 	 * @param handler Callback function to handle the RPC
 	 * @returns Unsubscribe function to remove this handler
 	 *
 	 * @example
 	 * ```ts
-	 * const BuyItem = defineRpc({
+	 * const BuyItem = defineRPC({
 	 *   method: 'buyItem',
 	 *   schema: { itemId: BinaryCodec.string(32) }
 	 * });

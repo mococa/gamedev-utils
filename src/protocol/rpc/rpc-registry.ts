@@ -34,12 +34,12 @@ export class RpcRegistry {
 	/**
 	 * Register an RPC definition
 	 *
-	 * @param rpc The RPC definition created by defineRpc()
+	 * @param rpc The RPC definition created by defineRPC()
 	 * @throws Error if method is already registered
 	 *
 	 * @example
 	 * ```ts
-	 * const MatchCountdown = defineRpc({
+	 * const MatchCountdown = defineRPC({
 	 *   method: 'matchCountdown',
 	 *   schema: { secondsRemaining: BinaryCodec.u8 }
 	 * });

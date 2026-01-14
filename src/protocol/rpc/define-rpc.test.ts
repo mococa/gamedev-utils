@@ -1,12 +1,12 @@
 import { describe, it, expect } from "bun:test";
-import { defineRpc } from "./define-rpc";
+import { defineRPC } from "./define-rpc";
 import { BinaryCodec } from "../../core/binary-codec";
 import { RpcRegistry } from "./rpc-registry";
 
-describe("defineRpc", () => {
+describe("defineRPC", () => {
 	describe("type inference", () => {
 		it("should infer correct type from schema", () => {
-			const MatchCountdown = defineRpc({
+			const MatchCountdown = defineRPC({
 				method: 'matchCountdown',
 				schema: {
 					secondsRemaining: BinaryCodec.u8,
@@ -24,7 +24,7 @@ describe("defineRpc", () => {
 		});
 
 		it("should support RPCs with different field types", () => {
-			const BuyItem = defineRpc({
+			const BuyItem = defineRPC({
 				method: 'buyItem',
 				schema: {
 					itemId: BinaryCodec.string(32),
@@ -47,7 +47,7 @@ describe("defineRpc", () => {
 		});
 
 		it("should support empty RPCs (no parameters)", () => {
-			const Ping = defineRpc({
+			const Ping = defineRPC({
 				method: 'ping',
 				schema: {},
 			});
@@ -62,7 +62,7 @@ describe("defineRpc", () => {
 
 	describe("codec generation", () => {
 		it("should generate a codec that can encode/decode", () => {
-			const TestRpc = defineRpc({
+			const TestRpc = defineRPC({
 				method: 'test',
 				schema: {
 					value: BinaryCodec.u32,
@@ -81,7 +81,7 @@ describe("defineRpc", () => {
 		});
 
 		it("should encode/decode complex types", () => {
-			const PlayerInfo = defineRpc({
+			const PlayerInfo = defineRPC({
 				method: 'playerInfo',
 				schema: {
 					playerId: BinaryCodec.u32,
@@ -112,7 +112,7 @@ describe("defineRpc", () => {
 
 	describe("integration with RpcRegistry", () => {
 		it("should work with RpcRegistry", () => {
-			const Notification = defineRpc({
+			const Notification = defineRPC({
 				method: 'notification',
 				schema: {
 					message: BinaryCodec.string(128),

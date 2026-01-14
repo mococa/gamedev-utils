@@ -379,11 +379,11 @@ For one-off events that don't fit intents (inputs) or snapshots (state sync), us
 ### Define RPCs
 
 ```ts
-import { defineRpc, RpcRegistry } from "./protocol/rpc";
+import { defineRPC, RpcRegistry } from "./protocol/rpc";
 import { BinaryCodec } from "./core/binary-codec";
 
 // Server → Client RPC
-const MatchCountdown = defineRpc({
+const MatchCountdown = defineRPC({
   method: 'matchCountdown',
   schema: {
     secondsRemaining: BinaryCodec.u8,
@@ -391,7 +391,7 @@ const MatchCountdown = defineRpc({
 });
 
 // Client → Server RPC
-const BuyItem = defineRpc({
+const BuyItem = defineRPC({
   method: 'buyItem',
   schema: {
     itemId: BinaryCodec.string(32),

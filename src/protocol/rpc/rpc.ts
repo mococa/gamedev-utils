@@ -28,7 +28,7 @@ export interface RPC<T = unknown> {
 
 /**
  * Compile-time RPC definition with type safety
- * Created by defineRpc() helper
+ * Created by defineRPC() helper
  */
 export interface DefinedRPC<TSchema extends Record<string, any>> {
 	method: string;

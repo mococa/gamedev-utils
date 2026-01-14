@@ -60,7 +60,7 @@ class RpcCodecImpl<T extends object> implements RpcCodec<T> {
  *
  * @example Server → Client RPC
  * ```ts
- * const MatchCountdown = defineRpc({
+ * const MatchCountdown = defineRPC({
  *   method: 'matchCountdown',
  *   schema: {
  *     secondsRemaining: BinaryCodec.u8,
@@ -78,7 +78,7 @@ class RpcCodecImpl<T extends object> implements RpcCodec<T> {
  *
  * @example Client → Server RPC
  * ```ts
- * const BuyItem = defineRpc({
+ * const BuyItem = defineRPC({
  *   method: 'buyItem',
  *   schema: {
  *     itemId: BinaryCodec.string(32),

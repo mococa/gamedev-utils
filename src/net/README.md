@@ -181,17 +181,17 @@ For one-off events that don't fit intents (inputs) or snapshots (state sync), us
 ### Quick Example
 
 ```typescript
-import { defineRpc, RpcRegistry } from '@mococa/gamedev-utils';
+import { defineRPC, RpcRegistry } from '@mococa/gamedev-utils';
 
 // Define RPCs
-const MatchCountdown = defineRpc({
+const MatchCountdown = defineRPC({
   method: 'matchCountdown',
   schema: {
     secondsRemaining: BinaryCodec.u8,
   }
 });
 
-const BuyItem = defineRpc({
+const BuyItem = defineRPC({
   method: 'buyItem',
   schema: {
     itemId: BinaryCodec.string(32),
