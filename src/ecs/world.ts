@@ -1,3 +1,4 @@
+import { generateId } from "../core/generate-id";
 import { Component } from "./component";
 import { ComponentStore } from "./component-store";
 import { EntityHandle } from "./entity-handle";
@@ -76,10 +77,14 @@ export class World {
   private components: Component<any>[] = [];
 
   // Query result cache (reusable buffers for zero allocations)
-  private queryResultBuffers: Map<number, Entity[]> = new Map();
+  private queryResultBuffers: Record<number, Entity[]> = {};
+
+  // Persistent query cache (invalidated only on archetype changes)
+  private archetypeVersion: number = 0; // Increments on spawn/despawn/add/remove
+  private queryCacheVersions: Uint32Array = new Uint32Array(1024); // Indexed by mask (faster than Map!)
 
   // Debug ID
-  private worldId = Math.random().toString(36).slice(2, 9);
+  private worldId = generateId({ prefix: "world_" });
 
   constructor(config: WorldConfig) {
     this.maxEntities = config.maxEntities ?? 10000;
@@ -175,6 +180,9 @@ export class World {
     this.aliveEntitiesArray.push(id);
     this.componentMasks[id] = 0;
 
+    // Invalidate query cache since entity count changed
+    this.invalidateQueryCache();
+
     return id;
   }
 
@@ -216,6 +224,9 @@ export class World {
     this.freeEntityIds[this.freeEntityHead] = entity;
     this.freeEntityHead = (this.freeEntityHead + 1) & this.freeEntityMask; // Bitwise AND instead of modulo
     this.freeEntityCount++;
+
+    // Invalidate query cache since entity count changed
+    this.invalidateQueryCache();
   }
 
   /**
@@ -223,6 +234,13 @@ export class World {
    */
   isAlive(entity: Entity): boolean {
     return this.aliveEntityFlags[entity] === 1;
+  }
+
+  /**
+   * Invalidate all query caches (called on archetype changes).
+   */
+  private invalidateQueryCache(): void {
+    this.archetypeVersion++;
   }
 
   /**
@@ -242,6 +260,9 @@ export class World {
 
     this.componentMasks[entity] |= 1 << index;
     store.set(entity, data);
+
+    // Invalidate query cache since archetype changed
+    this.invalidateQueryCache();
   }
 
   /**
@@ -257,6 +278,9 @@ export class World {
     if (store) {
       store.clear(entity);
     }
+
+    // Invalidate query cache since archetype changed
+    this.invalidateQueryCache();
   }
 
   /**
@@ -386,12 +410,21 @@ export class World {
     if (requiredMask === -1) return []; // Component not registered
 
     // Get or create reusable buffer for this query mask
-    let buffer = this.queryResultBuffers.get(requiredMask);
+    let buffer = this.queryResultBuffers[requiredMask];
     if (!buffer) {
       buffer = [];
-      this.queryResultBuffers.set(requiredMask, buffer);
+      this.queryResultBuffers[requiredMask] = buffer;
     }
 
+    // Check if cache is valid (persistent query caching)
+    // Use array lookup (faster than Map.get!)
+    if (requiredMask < this.queryCacheVersions.length &&
+      this.queryCacheVersions[requiredMask] === this.archetypeVersion) {
+      // Cache is valid! Return cached result (FAST PATH - no iteration!)
+      return buffer;
+    }
+
+    // Cache miss or stale - recompute query results
     // Fast array iteration with direct bitmask access
     const entities = this.aliveEntitiesArray;
     const masks = this.componentMasks;
@@ -435,6 +468,11 @@ export class World {
 
     // Truncate buffer to actual size
     buffer.length = writeIdx;
+
+    // Mark cache as valid for this archetype version (array write is faster than Map.set!)
+    if (requiredMask < this.queryCacheVersions.length) {
+      this.queryCacheVersions[requiredMask] = this.archetypeVersion;
+    }
 
     return buffer;
   }
