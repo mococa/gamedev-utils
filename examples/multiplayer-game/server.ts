@@ -56,10 +56,6 @@ class GameServer {
                     peersToUpdate++;
                 }
             }
-
-            if (peersToUpdate > 0) {
-                console.log(`Server tick ${tick}: Sent snapshots to ${peersToUpdate}/${this.network.getPeerIds().length} peers`);
-            }
         });
 
         // Create transport
@@ -157,10 +153,12 @@ class GameServer {
         this.startHttpServer();
 
         // Game loop - simulation.update() will trigger onTick callback
-        // Use fixed deltaTime for determinism (not actual elapsed time)
+        let last = performance.now();
         setInterval(() => {
-            const fixedDeltaTime = 1 / this.simulation.ticker.rate;
-            this.simulation.update(fixedDeltaTime);
+            const now = performance.now();
+            const dt = (now - last) / 1000;
+            last = now;
+            this.simulation.update(dt);
         }, 1000 / this.simulation.ticker.rate);
     }
 
