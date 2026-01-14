@@ -285,10 +285,10 @@ describe("World", () => {
     expect(() => world.set(entity, Transform, { x: 0, y: 0, rotation: 0 })).toThrow();
   });
 
-  test("should support maximum of 32 components", () => {
-    // Create 32 components
+  test("should support many components with dynamic scaling", () => {
+    // Create 128 components (4 words)
     const components: Component[] = [];
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < 128; i++) {
       components.push(
         defineComponent(`Component${i}`, {
           value: BinaryCodec.u8,
@@ -296,14 +296,15 @@ describe("World", () => {
       );
     }
 
+    // Should not throw - dynamic scaling
     expect(() => {
       new World({ components });
     }).not.toThrow();
 
-    // 33rd component should throw
-    const extra = defineComponent("Component32", { value: BinaryCodec.u8 });
+    // Should also support more than 128 components
+    const extra = defineComponent("Component128", { value: BinaryCodec.u8 });
     expect(() => {
       new World({ components: [...components, extra] });
-    }).toThrow("Maximum 32 components");
+    }).not.toThrow();
   });
 });

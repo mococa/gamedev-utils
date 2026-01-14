@@ -70,25 +70,43 @@ export class World {
 
   // Component system (array-indexed for O(1) access)
   private componentStoresArray: (ComponentStore<any> | undefined)[];
-  private componentMasks: Uint32Array;
+  private componentMasks: Uint32Array[]; // Dynamic array of bitmask words (32 components per word)
+  private componentMasks0!: Uint32Array; // Fast path: cached reference to first word (most common case)
+  private numMaskWords: number = 0; // Number of allocated mask words
 
   // Component registry (Map only for initial lookup)
   private componentMap: Map<Component<any>, number> = new Map();
   private components: Component<any>[] = [];
 
   // Query result cache (reusable buffers for zero allocations)
-  private queryResultBuffers: Record<number, Entity[]> = {};
+  private queryResultBuffers: Record<string, Entity[]> = {}; // Now keyed by string hash
 
   // Persistent query cache (invalidated only on archetype changes)
   private archetypeVersion: number = 0; // Increments on spawn/despawn/add/remove
-  private queryCacheVersions: Uint32Array = new Uint32Array(1024); // Indexed by mask (faster than Map!)
+  private queryCacheVersions: Record<string, number> = {}; // Keyed by mask hash
+
+  // Query mask cache (avoid recomputing masks for same component combinations)
+  private queryMaskCache: Record<string, number[]> = {};
 
   // Debug ID
   private worldId = generateId({ prefix: "world_" });
 
   constructor(config: WorldConfig) {
     this.maxEntities = config.maxEntities ?? 10000;
-    this.componentMasks = new Uint32Array(this.maxEntities);
+
+    // Calculate number of mask words needed (1 word per 32 components)
+    this.numMaskWords = Math.ceil(config.components.length / 32);
+
+    // Allocate separate Uint32Array for each mask word
+    this.componentMasks = [];
+    for (let i = 0; i < this.numMaskWords; i++) {
+      this.componentMasks.push(new Uint32Array(this.maxEntities));
+    }
+
+    // Cache first word for fast path (most games use <32 components)
+    if (this.numMaskWords > 0) {
+      this.componentMasks0 = this.componentMasks[0];
+    }
 
     // Round up to next power of 2 for ring buffer (enables bitwise modulo)
     const ringBufferSize = Math.pow(2, Math.ceil(Math.log2(this.maxEntities)));
@@ -101,15 +119,11 @@ export class World {
     // Pre-allocate alive flags for O(1) alive checks
     this.aliveEntityFlags = new Uint8Array(this.maxEntities);
 
-    // Pre-allocate arrays for all possible components (max 32)
-    this.componentStoresArray = new Array(32);
+    // Pre-allocate arrays for component stores
+    this.componentStoresArray = new Array(config.components.length);
 
     // Register components
     config.components.forEach((component, index) => {
-      if (index >= 32) {
-        throw new Error("Maximum 32 components supported (limited by 32-bit bitmask)");
-      }
-
       this.components.push(component);
       this.componentMap.set(component, index);
 
@@ -136,16 +150,139 @@ export class World {
   }
 
   /**
-   * Get or compute query bitmask (optimized - computes mask without caching)
+   * Set a bit in the bitmask for an entity
    */
-  private getQueryMask(components: Component<any>[]): number {
-    let requiredMask = 0;
+  private setComponentBit(entity: Entity, componentIndex: number): void {
+    const wordIndex = componentIndex >>> 5; // Which word (div 32)
+    const bitIndex = componentIndex & 31; // Which bit in word (mod 32)
+    this.componentMasks[wordIndex][entity] |= 1 << bitIndex;
+  }
+
+  /**
+   * Clear a bit in the bitmask for an entity
+   */
+  private clearComponentBit(entity: Entity, componentIndex: number): void {
+    const wordIndex = componentIndex >>> 5; // Which word (div 32)
+    const bitIndex = componentIndex & 31; // Which bit in word (mod 32)
+    this.componentMasks[wordIndex][entity] &= ~(1 << bitIndex);
+  }
+
+  /**
+   * Check if a bit is set in the bitmask for an entity
+   */
+  private hasComponentBit(entity: Entity, componentIndex: number): boolean {
+    const wordIndex = componentIndex >>> 5; // Which word (div 32)
+    const bitIndex = componentIndex & 31; // Which bit in word (mod 32)
+    return (this.componentMasks[wordIndex][entity] & (1 << bitIndex)) !== 0;
+  }
+
+  /**
+   * Clear all component bits for an entity
+   */
+  private clearAllComponentBits(entity: Entity): void {
+    for (let i = 0; i < this.numMaskWords; i++) {
+      this.componentMasks[i][entity] = 0;
+    }
+  }
+
+  /**
+   * Check if entity matches the required component mask
+   * Returns true if entity has all required components
+   *
+   * Optimized for common case: most games use <32 components,
+   * so we only need to check the first word
+   */
+  private matchesComponentMask(entity: Entity, mask: number[]): boolean {
+    const len = mask.length;
+
+    // Fast path: single word (most common - <32 components)
+    if (len === 1) {
+      return (this.componentMasks0[entity] & mask[0]) === mask[0];
+    }
+
+    // Unrolled for 2 words (32-63 components)
+    if (len === 2) {
+      return (this.componentMasks0[entity] & mask[0]) === mask[0] &&
+             (this.componentMasks[1][entity] & mask[1]) === mask[1];
+    }
+
+    // Unrolled for 3 words (64-95 components)
+    if (len === 3) {
+      return (this.componentMasks0[entity] & mask[0]) === mask[0] &&
+             (this.componentMasks[1][entity] & mask[1]) === mask[1] &&
+             (this.componentMasks[2][entity] & mask[2]) === mask[2];
+    }
+
+    // Unrolled for 4 words (96-127 components)
+    if (len === 4) {
+      return (this.componentMasks0[entity] & mask[0]) === mask[0] &&
+             (this.componentMasks[1][entity] & mask[1]) === mask[1] &&
+             (this.componentMasks[2][entity] & mask[2]) === mask[2] &&
+             (this.componentMasks[3][entity] & mask[3]) === mask[3];
+    }
+
+    // General case for 5+ words (rare)
+    for (let i = 0; i < len; i++) {
+      if ((this.componentMasks[i][entity] & mask[i]) !== mask[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Get or compute query bitmask
+   * Returns array of numbers (one 32-bit mask per word)
+   *
+   * Caches masks to avoid recomputation for frequently used component combinations
+   */
+  private getQueryMask(components: Component<any>[]): number[] | null {
+    // Create cache key from component names (sorted for consistency)
+    const cacheKey = components.map(c => c.name).sort().join(',');
+
+    // Check cache first
+    const cached = this.queryMaskCache[cacheKey];
+    if (cached) return cached;
+
+    // Find max component index to determine how many words we need
+    let maxIndex = -1;
+    const indices: number[] = [];
+
     for (const component of components) {
       const index = this.componentMap.get(component);
-      if (index === undefined) return -1; // Invalid mask sentinel
-      requiredMask |= 1 << index;
+      if (index === undefined) return null; // Invalid mask sentinel
+      indices.push(index);
+      if (index > maxIndex) maxIndex = index;
     }
+
+    // Calculate number of words needed
+    const numWords = Math.floor(maxIndex / 32) + 1;
+    const requiredMask: number[] = new Array(numWords).fill(0);
+
+    // Set bits for each component (use cached indices to avoid Map lookups)
+    for (const index of indices) {
+      const wordIndex = index >>> 5; // div 32
+      const bitIndex = index & 31; // mod 32
+      requiredMask[wordIndex] |= 1 << bitIndex;
+    }
+
+    // Cache the mask for future queries
+    this.queryMaskCache[cacheKey] = requiredMask;
+
     return requiredMask;
+  }
+
+  /**
+   * Convert mask array to a hash key for caching
+   */
+  private maskToKey(mask: number[]): string {
+    let key = '';
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i] !== 0) {
+        key += `${i}:${mask[i].toString(36)},`;
+      }
+    }
+    return key;
   }
 
   /**
@@ -178,7 +315,7 @@ export class World {
     this.aliveEntityFlags[id] = 1;
     this.aliveEntitiesIndices[id] = this.aliveEntitiesArray.length;
     this.aliveEntitiesArray.push(id);
-    this.componentMasks[id] = 0;
+    this.clearAllComponentBits(id);
 
     // Invalidate query cache since entity count changed
     this.invalidateQueryCache();
@@ -211,14 +348,13 @@ export class World {
     this.aliveEntitiesArray.pop();
 
     // Clear all components for this entity
-    const mask = this.componentMasks[entity];
     for (let i = 0; i < this.components.length; i++) {
-      if (mask & (1 << i)) {
+      if (this.hasComponentBit(entity, i)) {
         this.componentStoresArray[i]!.clear(entity);
       }
     }
 
-    this.componentMasks[entity] = 0;
+    this.clearAllComponentBits(entity);
 
     // Push to free list
     this.freeEntityIds[this.freeEntityHead] = entity;
@@ -258,7 +394,7 @@ export class World {
     const index = this.getComponentIndex(component);
     const store = this.componentStoresArray[index]!;
 
-    this.componentMasks[entity] |= 1 << index;
+    this.setComponentBit(entity, index);
     store.set(entity, data);
 
     // Invalidate query cache since archetype changed
@@ -272,7 +408,7 @@ export class World {
     const index = this.componentMap.get(component);
     if (index === undefined) return;
 
-    this.componentMasks[entity] &= ~(1 << index);
+    this.clearComponentBit(entity, index);
 
     const store = this.componentStoresArray[index];
     if (store) {
@@ -290,7 +426,7 @@ export class World {
     const index = this.componentMap.get(component);
     if (index === undefined) return false;
 
-    return (this.componentMasks[entity] & (1 << index)) !== 0;
+    return this.hasComponentBit(entity, index);
   }
 
   /**
@@ -317,7 +453,7 @@ export class World {
   get<T extends object>(entity: Entity, component: Component<T>): Readonly<T> {
     const index = this.getComponentIndex(component);
 
-    if ((this.componentMasks[entity] & (1 << index)) === 0) {
+    if (!this.hasComponentBit(entity, index)) {
       const entityComponents = this.getEntityComponentNames(entity);
       throw new Error(
         `Cannot get component ${component.name} from entity ${entity}: ` +
@@ -339,7 +475,7 @@ export class World {
   getMutable<T extends object>(entity: Entity, component: Component<T>): T {
     const index = this.getComponentIndex(component);
 
-    if ((this.componentMasks[entity] & (1 << index)) === 0) {
+    if (!this.hasComponentBit(entity, index)) {
       throw new Error(`Entity ${entity} does not have component ${component.name}`);
     }
 
@@ -353,7 +489,7 @@ export class World {
   set<T extends object>(entity: Entity, component: Component<T>, data: T): void {
     const index = this.getComponentIndex(component);
 
-    if ((this.componentMasks[entity] & (1 << index)) === 0) {
+    if (!this.hasComponentBit(entity, index)) {
       throw new Error(
         `Cannot set component ${component.name} on entity ${entity}: ` +
         `entity does not have this component. Use add() first.`
@@ -379,7 +515,7 @@ export class World {
   update<T extends object>(entity: Entity, component: Component<T>, partial: Partial<T>): void {
     const index = this.getComponentIndex(component);
 
-    if ((this.componentMasks[entity] & (1 << index)) === 0) {
+    if (!this.hasComponentBit(entity, index)) {
       throw new Error(`Entity ${entity} does not have component ${component.name}`);
     }
 
@@ -407,61 +543,34 @@ export class World {
    */
   query(...components: Component<any>[]): readonly Entity[] {
     const requiredMask = this.getQueryMask(components);
-    if (requiredMask === -1) return []; // Component not registered
+    if (requiredMask === null) return []; // Component not registered
+
+    const maskKey = this.maskToKey(requiredMask);
 
     // Get or create reusable buffer for this query mask
-    let buffer = this.queryResultBuffers[requiredMask];
+    let buffer = this.queryResultBuffers[maskKey];
     if (!buffer) {
       buffer = [];
-      this.queryResultBuffers[requiredMask] = buffer;
+      this.queryResultBuffers[maskKey] = buffer;
     }
 
     // Check if cache is valid (persistent query caching)
-    // Use array lookup (faster than Map.get!)
-    if (requiredMask < this.queryCacheVersions.length &&
-      this.queryCacheVersions[requiredMask] === this.archetypeVersion) {
+    if (this.queryCacheVersions[maskKey] === this.archetypeVersion) {
       // Cache is valid! Return cached result (FAST PATH - no iteration!)
       return buffer;
     }
 
     // Cache miss or stale - recompute query results
-    // Fast array iteration with direct bitmask access
     const entities = this.aliveEntitiesArray;
-    const masks = this.componentMasks;
     const length = entities.length;
 
     // Use write cursor pattern instead of buffer.length = 0 + push
     let writeIdx = 0;
 
-    // Unrolled loop for better performance (8x unrolling)
-    let i = 0;
-    const remainder = length % 8;
-
-    // Process 8 entities at a time
-    for (; i < length - remainder; i += 8) {
-      const e0 = entities[i];
-      const e1 = entities[i + 1];
-      const e2 = entities[i + 2];
-      const e3 = entities[i + 3];
-      const e4 = entities[i + 4];
-      const e5 = entities[i + 5];
-      const e6 = entities[i + 6];
-      const e7 = entities[i + 7];
-
-      if ((masks[e0] & requiredMask) === requiredMask) buffer[writeIdx++] = e0;
-      if ((masks[e1] & requiredMask) === requiredMask) buffer[writeIdx++] = e1;
-      if ((masks[e2] & requiredMask) === requiredMask) buffer[writeIdx++] = e2;
-      if ((masks[e3] & requiredMask) === requiredMask) buffer[writeIdx++] = e3;
-      if ((masks[e4] & requiredMask) === requiredMask) buffer[writeIdx++] = e4;
-      if ((masks[e5] & requiredMask) === requiredMask) buffer[writeIdx++] = e5;
-      if ((masks[e6] & requiredMask) === requiredMask) buffer[writeIdx++] = e6;
-      if ((masks[e7] & requiredMask) === requiredMask) buffer[writeIdx++] = e7;
-    }
-
-    // Process remaining entities
-    for (; i < length; i++) {
+    // Process entities (checking 128-bit bitmask: 4 x 32-bit words)
+    for (let i = 0; i < length; i++) {
       const entity = entities[i];
-      if ((masks[entity] & requiredMask) === requiredMask) {
+      if (this.matchesComponentMask(entity, requiredMask)) {
         buffer[writeIdx++] = entity;
       }
     }
@@ -469,10 +578,8 @@ export class World {
     // Truncate buffer to actual size
     buffer.length = writeIdx;
 
-    // Mark cache as valid for this archetype version (array write is faster than Map.set!)
-    if (requiredMask < this.queryCacheVersions.length) {
-      this.queryCacheVersions[requiredMask] = this.archetypeVersion;
-    }
+    // Mark cache as valid for this archetype version
+    this.queryCacheVersions[maskKey] = this.archetypeVersion;
 
     return buffer;
   }
@@ -512,11 +619,10 @@ export class World {
    * Get component names for an entity (for debugging)
    */
   private getEntityComponentNames(entity: Entity): string[] {
-    const mask = this.componentMasks[entity];
     const result: string[] = [];
 
     for (let i = 0; i < this.components.length; i++) {
-      if (mask & (1 << i)) {
+      if (this.hasComponentBit(entity, i)) {
         result.push(this.components[i].name);
       }
     }
