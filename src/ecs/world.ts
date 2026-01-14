@@ -4,6 +4,11 @@ import { ComponentStore } from "./component-store";
 import { EntityHandle } from "./entity-handle";
 
 /**
+ * Storage backend type for component data
+ */
+export type StorageBackend = "dataview" | "typedarrays";
+
+/**
  * Configuration for creating a World
  */
 export interface WorldConfig {
@@ -73,6 +78,7 @@ export class World {
   private componentMasks: Uint32Array[]; // Dynamic array of bitmask words (32 components per word)
   private componentMasks0!: Uint32Array; // Fast path: cached reference to first word (most common case)
   private numMaskWords: number = 0; // Number of allocated mask words
+  private storageBackend: StorageBackend;
 
   // Component registry (Map only for initial lookup)
   private componentMap: Map<Component<any>, number> = new Map();
@@ -127,7 +133,7 @@ export class World {
       this.components.push(component);
       this.componentMap.set(component, index);
 
-      // Create component store with typed arrays
+      // Create component store with selected backend
       const store = new ComponentStore(component, this.maxEntities);
       this.componentStoresArray[index] = store;
     });

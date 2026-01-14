@@ -1,19 +1,20 @@
 import { Component } from "./component";
 
 /**
- * Stores component data for entities using typed arrays.
- * Provides efficient packed storage with O(1) access by entity ID.
+ * Stores component data using separate TypedArrays per field (SoA - Structure of Arrays).
+ * Alternative to DataView-based storage for comparison.
  *
- * Key optimizations:
- * - ArrayBuffer storage (exact byte size, no waste)
- * - Single reusable DataView (no allocations)
- * - Single reusable object for get() (zero allocations)
- * - Pre-computed field offsets (no runtime calculations)
+ * Tradeoffs:
+ * + Faster individual field access (native typed array operations)
+ * + Better for column-major access patterns
+ * + SIMD-friendly (can vectorize single-field operations)
+ * - Worse cache locality for row-major access (whole component reads)
+ * - More memory fragmentation (separate arrays)
+ * - Slightly higher memory overhead (each TypedArray has its own header)
  */
 export class ComponentStore<T extends object> {
-  private buffer: ArrayBuffer;
-  private view: DataView;
-  private stride: number; // Component size in bytes
+  private arrays: (Float32Array | Int32Array | Uint32Array | Uint16Array | Uint8Array)[];
+  private stride: number; // Component size in bytes (for compatibility)
   private component: Component<T>;
   private maxEntities: number;
 
@@ -21,36 +22,50 @@ export class ComponentStore<T extends object> {
   private reusableObject: T;
 
   // Pre-computed field metadata for fast access
-  private fieldOffsets: number[];
   private fields: any[];
   private fieldKeys: (keyof T)[];
-  private fieldIndexMap: Record<string, number>; // For O(1) field lookup in update()
+  private fieldIndexMap: Record<string, number>;
 
   constructor(component: Component<T>, maxEntities: number) {
     this.component = component;
     this.maxEntities = maxEntities;
-
-    // Use exact byte size (no waste like Float32Array)
     this.stride = component.size;
 
-    // Allocate exact memory needed
-    this.buffer = new ArrayBuffer(maxEntities * this.stride);
-    this.view = new DataView(this.buffer);
-
-    // Pre-compute field metadata once
+    // Pre-compute field metadata
     this.fieldKeys = component.fieldNames;
-    this.fieldOffsets = [];
     this.fields = [];
     this.fieldIndexMap = {};
+    this.arrays = [];
 
-    let offset = 0;
+    // Create separate typed array for each field
     for (let i = 0; i < this.fieldKeys.length; i++) {
       const key = this.fieldKeys[i];
       const field = component.schema[key];
-      this.fieldOffsets.push(offset);
       this.fields.push(field);
       this.fieldIndexMap[key as string] = i;
-      offset += field.size;
+
+      // Allocate appropriate typed array based on field type
+      switch (field.size) {
+        case 4:
+          // Could be f32, i32, or u32 - check field type
+          if (field.read.toString().includes("getFloat32")) {
+            this.arrays.push(new Float32Array(maxEntities));
+          } else if (field.read.toString().includes("getInt32")) {
+            this.arrays.push(new Int32Array(maxEntities));
+          } else {
+            this.arrays.push(new Uint32Array(maxEntities));
+          }
+          break;
+        case 2:
+          this.arrays.push(new Uint16Array(maxEntities));
+          break;
+        case 1:
+          this.arrays.push(new Uint8Array(maxEntities));
+          break;
+        default:
+          // Fallback to Uint8Array with multiple elements
+          this.arrays.push(new Uint8Array(maxEntities * field.size));
+      }
     }
 
     // Create single reusable object
@@ -64,45 +79,27 @@ export class ComponentStore<T extends object> {
    * Get component data for an entity.
    *
    * ⚠️ IMPORTANT: Returns a REUSED object that is overwritten on the next get() call.
-   * Use immediately or copy the data. For safe access, use getMutable() or copyTo().
-   *
-   * @example
-   * // ✅ CORRECT: Use immediately
-   * const t = store.get(entity);
-   * console.log(t.x, t.y);
-   *
-   * // ❌ WRONG: Storing reference
-   * const t1 = store.get(entity1);
-   * const t2 = store.get(entity2); // t1 is now corrupted!
-   *
-   * // ✅ CORRECT: Copy if you need multiple
-   * const t1 = { ...store.get(entity1) };
-   * const t2 = { ...store.get(entity2) };
    */
   get(entityId: number): Readonly<T> {
-    const baseOffset = entityId * this.stride;
     const length = this.fields.length;
 
     // Unrolled loop for common cases
     if (length === 2) {
-      this.reusableObject[this.fieldKeys[0]] = this.fields[0].read(this.view, baseOffset + this.fieldOffsets[0]);
-      this.reusableObject[this.fieldKeys[1]] = this.fields[1].read(this.view, baseOffset + this.fieldOffsets[1]);
+      this.reusableObject[this.fieldKeys[0]] = this.arrays[0][entityId] as any;
+      this.reusableObject[this.fieldKeys[1]] = this.arrays[1][entityId] as any;
     } else if (length === 3) {
-      this.reusableObject[this.fieldKeys[0]] = this.fields[0].read(this.view, baseOffset + this.fieldOffsets[0]);
-      this.reusableObject[this.fieldKeys[1]] = this.fields[1].read(this.view, baseOffset + this.fieldOffsets[1]);
-      this.reusableObject[this.fieldKeys[2]] = this.fields[2].read(this.view, baseOffset + this.fieldOffsets[2]);
+      this.reusableObject[this.fieldKeys[0]] = this.arrays[0][entityId] as any;
+      this.reusableObject[this.fieldKeys[1]] = this.arrays[1][entityId] as any;
+      this.reusableObject[this.fieldKeys[2]] = this.arrays[2][entityId] as any;
     } else if (length === 4) {
-      this.reusableObject[this.fieldKeys[0]] = this.fields[0].read(this.view, baseOffset + this.fieldOffsets[0]);
-      this.reusableObject[this.fieldKeys[1]] = this.fields[1].read(this.view, baseOffset + this.fieldOffsets[1]);
-      this.reusableObject[this.fieldKeys[2]] = this.fields[2].read(this.view, baseOffset + this.fieldOffsets[2]);
-      this.reusableObject[this.fieldKeys[3]] = this.fields[3].read(this.view, baseOffset + this.fieldOffsets[3]);
+      this.reusableObject[this.fieldKeys[0]] = this.arrays[0][entityId] as any;
+      this.reusableObject[this.fieldKeys[1]] = this.arrays[1][entityId] as any;
+      this.reusableObject[this.fieldKeys[2]] = this.arrays[2][entityId] as any;
+      this.reusableObject[this.fieldKeys[3]] = this.arrays[3][entityId] as any;
     } else {
       // Generic loop for other sizes
       for (let i = 0; i < length; i++) {
-        this.reusableObject[this.fieldKeys[i]] = this.fields[i].read(
-          this.view,
-          baseOffset + this.fieldOffsets[i]
-        );
+        this.reusableObject[this.fieldKeys[i]] = this.arrays[i][entityId] as any;
       }
     }
 
@@ -111,9 +108,6 @@ export class ComponentStore<T extends object> {
 
   /**
    * Get a mutable copy of component data.
-   * Use this when you need to modify and keep the data.
-   *
-   * Note: This allocates a new object. Use sparingly in hot paths.
    */
   getMutable(entityId: number): T {
     const copy = {} as T;
@@ -123,82 +117,63 @@ export class ComponentStore<T extends object> {
 
   /**
    * Copy component data into a provided object.
-   * Use this when you need to keep multiple components at once.
    */
   copyTo(entityId: number, target: T): void {
-    const baseOffset = entityId * this.stride;
-
     for (let i = 0; i < this.fields.length; i++) {
-      target[this.fieldKeys[i]] = this.fields[i].read(
-        this.view,
-        baseOffset + this.fieldOffsets[i]
-      );
+      target[this.fieldKeys[i]] = this.arrays[i][entityId] as any;
     }
   }
 
   /**
    * Set component data for an entity.
-   * Writes the data directly into the typed array.
    */
   set(entityId: number, data: T): void {
-    const baseOffset = entityId * this.stride;
     const length = this.fields.length;
 
     // Unrolled loop for common cases
     if (length === 2) {
-      this.fields[0].write(this.view, baseOffset + this.fieldOffsets[0], data[this.fieldKeys[0]]);
-      this.fields[1].write(this.view, baseOffset + this.fieldOffsets[1], data[this.fieldKeys[1]]);
+      this.arrays[0][entityId] = data[this.fieldKeys[0]] as any;
+      this.arrays[1][entityId] = data[this.fieldKeys[1]] as any;
     } else if (length === 3) {
-      this.fields[0].write(this.view, baseOffset + this.fieldOffsets[0], data[this.fieldKeys[0]]);
-      this.fields[1].write(this.view, baseOffset + this.fieldOffsets[1], data[this.fieldKeys[1]]);
-      this.fields[2].write(this.view, baseOffset + this.fieldOffsets[2], data[this.fieldKeys[2]]);
+      this.arrays[0][entityId] = data[this.fieldKeys[0]] as any;
+      this.arrays[1][entityId] = data[this.fieldKeys[1]] as any;
+      this.arrays[2][entityId] = data[this.fieldKeys[2]] as any;
     } else if (length === 4) {
-      this.fields[0].write(this.view, baseOffset + this.fieldOffsets[0], data[this.fieldKeys[0]]);
-      this.fields[1].write(this.view, baseOffset + this.fieldOffsets[1], data[this.fieldKeys[1]]);
-      this.fields[2].write(this.view, baseOffset + this.fieldOffsets[2], data[this.fieldKeys[2]]);
-      this.fields[3].write(this.view, baseOffset + this.fieldOffsets[3], data[this.fieldKeys[3]]);
+      this.arrays[0][entityId] = data[this.fieldKeys[0]] as any;
+      this.arrays[1][entityId] = data[this.fieldKeys[1]] as any;
+      this.arrays[2][entityId] = data[this.fieldKeys[2]] as any;
+      this.arrays[3][entityId] = data[this.fieldKeys[3]] as any;
     } else {
       // Generic loop for other sizes
       for (let i = 0; i < length; i++) {
-        this.fields[i].write(
-          this.view,
-          baseOffset + this.fieldOffsets[i],
-          data[this.fieldKeys[i]]
-        );
+        this.arrays[i][entityId] = data[this.fieldKeys[i]] as any;
       }
     }
   }
 
   /**
-   * Update specific fields of a component without reading the whole component first.
-   * Optimized to only iterate over the fields being updated.
+   * Update specific fields of a component.
    */
   update(entityId: number, partial: Partial<T>): void {
-    const baseOffset = entityId * this.stride;
-
-    // Fast path for single field update (90% of cases) - avoids Object.keys allocation
+    // Fast path for single field update
     const keys = Object.keys(partial) as (keyof T)[];
     const keyCount = keys.length;
 
     if (keyCount === 1) {
       const key = keys[0];
       const i = this.fieldIndexMap[key as string];
-      this.fields[i].write(
-        this.view,
-        baseOffset + this.fieldOffsets[i],
-        partial[key]!
-      );
+      this.arrays[i][entityId] = partial[key] as any;
       return;
     }
 
-    // Fast path for two field update (common for 2D positions)
+    // Fast path for two field update
     if (keyCount === 2) {
       const key0 = keys[0];
       const key1 = keys[1];
       const i0 = this.fieldIndexMap[key0 as string];
       const i1 = this.fieldIndexMap[key1 as string];
-      this.fields[i0].write(this.view, baseOffset + this.fieldOffsets[i0], partial[key0]!);
-      this.fields[i1].write(this.view, baseOffset + this.fieldOffsets[i1], partial[key1]!);
+      this.arrays[i0][entityId] = partial[key0] as any;
+      this.arrays[i1][entityId] = partial[key1] as any;
       return;
     }
 
@@ -206,11 +181,7 @@ export class ComponentStore<T extends object> {
     for (let j = 0; j < keyCount; j++) {
       const key = keys[j];
       const i = this.fieldIndexMap[key as string];
-      this.fields[i].write(
-        this.view,
-        baseOffset + this.fieldOffsets[i],
-        partial[key]!
-      );
+      this.arrays[i][entityId] = partial[key] as any;
     }
   }
 
@@ -218,27 +189,30 @@ export class ComponentStore<T extends object> {
    * Clear component data for an entity (set to default values)
    */
   clear(entityId: number): void {
-    const baseOffset = entityId * this.stride;
-
     for (let i = 0; i < this.fields.length; i++) {
-      this.fields[i].write(
-        this.view,
-        baseOffset + this.fieldOffsets[i],
-        this.fields[i].toNil()
-      );
+      this.arrays[i][entityId] = this.fields[i].toNil();
     }
   }
 
   /**
-   * Get direct access to the underlying buffer.
-   * Advanced use only - for SIMD operations, GPU uploads, zero-copy networking, etc.
+   * Get direct access to the underlying arrays.
+   * Advanced use only - for SIMD operations, batch processing, etc.
    */
-  getRawBuffer(): ArrayBuffer {
-    return this.buffer;
+  getRawArrays(): readonly (Float32Array | Int32Array | Uint32Array | Uint16Array | Uint8Array)[] {
+    return this.arrays;
   }
 
   /**
-   * Get the stride in bytes.
+   * Get a specific field's array directly.
+   * Useful for vectorized operations on a single field across all entities.
+   */
+  getFieldArray(fieldName: keyof T): Float32Array | Int32Array | Uint32Array | Uint16Array | Uint8Array {
+    const index = this.fieldIndexMap[fieldName as string];
+    return this.arrays[index];
+  }
+
+  /**
+   * Get the stride in bytes (for compatibility with DataView version).
    */
   getStride(): number {
     return this.stride;
