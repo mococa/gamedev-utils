@@ -3,24 +3,25 @@ import { BinaryCodec } from "../core/binary-codec";
 import { defineComponent } from "./component";
 import { World } from "./world";
 
-// Define components for benchmarking
-const Transform = defineComponent("Transform", {
-  x: BinaryCodec.f32,
-  y: BinaryCodec.f32,
-  rotation: BinaryCodec.f32,
-});
-
-const Velocity = defineComponent("Velocity", {
-  vx: BinaryCodec.f32,
-  vy: BinaryCodec.f32,
-});
-
-const Health = defineComponent("Health", {
-  current: BinaryCodec.u16,
-  max: BinaryCodec.u16,
-});
 
 describe("ECS Performance Benchmarks", () => {
+  // Define components for benchmarking
+  const Transform = defineComponent("Transform", {
+    x: BinaryCodec.f32,
+    y: BinaryCodec.f32,
+    rotation: BinaryCodec.f32,
+  });
+
+  const Velocity = defineComponent("Velocity", {
+    vx: BinaryCodec.f32,
+    vy: BinaryCodec.f32,
+  });
+
+  const Health = defineComponent("Health", {
+    current: BinaryCodec.u16,
+    max: BinaryCodec.u16,
+  });
+
   test("spawn/despawn 10,000 entities (should be < 50ms)", () => {
     const world = new World({
       maxEntities: 10000,
@@ -1049,3 +1050,595 @@ describe("ECS Performance Benchmarks", () => {
     console.log("\n✅ Memory scales linearly with entity count (TypedArray-based storage)");
   });
 }); // Extended timeout for benchmarks
+
+
+describe("ECS Stress Test Benchmarks (25 Components)", () => {
+  // Define a comprehensive set of components for stress testing
+  const Transform = defineComponent("Transform", {
+    x: BinaryCodec.f32,
+    y: BinaryCodec.f32,
+    z: BinaryCodec.f32,
+    rotation: BinaryCodec.f32,
+    scale: BinaryCodec.f32,
+  });
+
+  const Velocity = defineComponent("Velocity", {
+    vx: BinaryCodec.f32,
+    vy: BinaryCodec.f32,
+    vz: BinaryCodec.f32,
+  });
+
+  const Acceleration = defineComponent("Acceleration", {
+    ax: BinaryCodec.f32,
+    ay: BinaryCodec.f32,
+    az: BinaryCodec.f32,
+  });
+
+  const Health = defineComponent("Health", {
+    current: BinaryCodec.u16,
+    max: BinaryCodec.u16,
+  });
+
+  const Armor = defineComponent("Armor", {
+    physical: BinaryCodec.u16,
+    magical: BinaryCodec.u16,
+  });
+
+  const Damage = defineComponent("Damage", {
+    physical: BinaryCodec.u16,
+    magical: BinaryCodec.u16,
+    critical: BinaryCodec.f32,
+  });
+
+  const Stats = defineComponent("Stats", {
+    strength: BinaryCodec.u16,
+    dexterity: BinaryCodec.u16,
+    intelligence: BinaryCodec.u16,
+    vitality: BinaryCodec.u16,
+  });
+
+  const Inventory = defineComponent("Inventory", {
+    slot1: BinaryCodec.u32,
+    slot2: BinaryCodec.u32,
+    slot3: BinaryCodec.u32,
+    slot4: BinaryCodec.u32,
+    gold: BinaryCodec.u32,
+  });
+
+  const Animation = defineComponent("Animation", {
+    currentFrame: BinaryCodec.u16,
+    totalFrames: BinaryCodec.u16,
+    fps: BinaryCodec.u8,
+    loop: BinaryCodec.u8,
+  });
+
+  const Collider = defineComponent("Collider", {
+    width: BinaryCodec.f32,
+    height: BinaryCodec.f32,
+    offsetX: BinaryCodec.f32,
+    offsetY: BinaryCodec.f32,
+  });
+
+  const Rigidbody = defineComponent("Rigidbody", {
+    mass: BinaryCodec.f32,
+    drag: BinaryCodec.f32,
+    angularDrag: BinaryCodec.f32,
+    useGravity: BinaryCodec.u8,
+  });
+
+  const AI = defineComponent("AI", {
+    state: BinaryCodec.u8,
+    targetId: BinaryCodec.u32,
+    aggroRange: BinaryCodec.f32,
+    chaseSpeed: BinaryCodec.f32,
+  });
+
+  const Cooldowns = defineComponent("Cooldowns", {
+    ability1: BinaryCodec.f32,
+    ability2: BinaryCodec.f32,
+    ability3: BinaryCodec.f32,
+    ability4: BinaryCodec.f32,
+  });
+
+  const Status = defineComponent("Status", {
+    stunned: BinaryCodec.u8,
+    slowed: BinaryCodec.u8,
+    poisoned: BinaryCodec.u8,
+    burning: BinaryCodec.u8,
+    frozen: BinaryCodec.u8,
+    invulnerable: BinaryCodec.u8,
+  });
+
+  const Team = defineComponent("Team", {
+    id: BinaryCodec.u8,
+    rank: BinaryCodec.u8,
+  });
+
+  const Experience = defineComponent("Experience", {
+    current: BinaryCodec.u32,
+    level: BinaryCodec.u16,
+    toNextLevel: BinaryCodec.u32,
+  });
+
+  const Lifetime = defineComponent("Lifetime", {
+    remaining: BinaryCodec.f32,
+    fadeOut: BinaryCodec.u8,
+  });
+
+  const Parent = defineComponent("Parent", {
+    entityId: BinaryCodec.u32,
+  });
+
+  const Children = defineComponent("Children", {
+    count: BinaryCodec.u8,
+    child1: BinaryCodec.u32,
+    child2: BinaryCodec.u32,
+    child3: BinaryCodec.u32,
+    child4: BinaryCodec.u32,
+  });
+
+  const Network = defineComponent("Network", {
+    ownerId: BinaryCodec.u32,
+    lastSyncTime: BinaryCodec.f32,
+    dirty: BinaryCodec.u8,
+  });
+
+  const Sprite = defineComponent("Sprite", {
+    textureId: BinaryCodec.u32,
+    tintR: BinaryCodec.u8,
+    tintG: BinaryCodec.u8,
+    tintB: BinaryCodec.u8,
+    alpha: BinaryCodec.u8,
+  });
+
+  const Audio = defineComponent("Audio", {
+    soundId: BinaryCodec.u32,
+    volume: BinaryCodec.f32,
+    loop: BinaryCodec.u8,
+    playing: BinaryCodec.u8,
+  });
+
+  const Particle = defineComponent("Particle", {
+    emissionRate: BinaryCodec.f32,
+    lifetime: BinaryCodec.f32,
+    speed: BinaryCodec.f32,
+    size: BinaryCodec.f32,
+  });
+
+  const Light = defineComponent("Light", {
+    intensity: BinaryCodec.f32,
+    radius: BinaryCodec.f32,
+    colorR: BinaryCodec.u8,
+    colorG: BinaryCodec.u8,
+    colorB: BinaryCodec.u8,
+  });
+
+  const Camera = defineComponent("Camera", {
+    fov: BinaryCodec.f32,
+    near: BinaryCodec.f32,
+    far: BinaryCodec.f32,
+    targetId: BinaryCodec.u32,
+  });
+
+  const ALL_COMPONENTS = [
+    Transform, Velocity, Acceleration, Health, Armor, Damage, Stats,
+    Inventory, Animation, Collider, Rigidbody, AI, Cooldowns, Status,
+    Team, Experience, Lifetime, Parent, Children, Network, Sprite,
+    Audio, Particle, Light, Camera
+  ];
+  test("stress: spawn 10,000 entities with 25 components", () => {
+    console.log("\n=== STRESS TEST: 25 Components per Entity ===");
+
+    const world = new World({
+      maxEntities: 10000,
+      components: ALL_COMPONENTS,
+    });
+
+    const entities: number[] = [];
+
+    const spawnStart = performance.now();
+    for (let i = 0; i < 10000; i++) {
+      entities.push(world.spawn());
+    }
+    const spawnTime = performance.now() - spawnStart;
+
+    const addStart = performance.now();
+    for (const entity of entities) {
+      world.add(entity, Transform, { x: 0, y: 0, z: 0, rotation: 0, scale: 1 });
+      world.add(entity, Velocity, { vx: 1, vy: 1, vz: 0 });
+      world.add(entity, Acceleration, { ax: 0, ay: 0, az: 0 });
+      world.add(entity, Health, { current: 100, max: 100 });
+      world.add(entity, Armor, { physical: 50, magical: 30 });
+      world.add(entity, Damage, { physical: 20, magical: 10, critical: 1.5 });
+      world.add(entity, Stats, { strength: 10, dexterity: 10, intelligence: 10, vitality: 10 });
+      world.add(entity, Inventory, { slot1: 0, slot2: 0, slot3: 0, slot4: 0, gold: 100 });
+      world.add(entity, Animation, { currentFrame: 0, totalFrames: 10, fps: 30, loop: 1 });
+      world.add(entity, Collider, { width: 32, height: 32, offsetX: 0, offsetY: 0 });
+      world.add(entity, Rigidbody, { mass: 1, drag: 0.1, angularDrag: 0.05, useGravity: 1 });
+      world.add(entity, AI, { state: 0, targetId: 0, aggroRange: 100, chaseSpeed: 5 });
+      world.add(entity, Cooldowns, { ability1: 0, ability2: 0, ability3: 0, ability4: 0 });
+      world.add(entity, Status, { stunned: 0, slowed: 0, poisoned: 0, burning: 0, frozen: 0, invulnerable: 0 });
+      world.add(entity, Team, { id: 1, rank: 1 });
+      world.add(entity, Experience, { current: 0, level: 1, toNextLevel: 100 });
+      world.add(entity, Lifetime, { remaining: 999, fadeOut: 0 });
+      world.add(entity, Parent, { entityId: 0 });
+      world.add(entity, Children, { count: 0, child1: 0, child2: 0, child3: 0, child4: 0 });
+      world.add(entity, Network, { ownerId: 0, lastSyncTime: 0, dirty: 0 });
+      world.add(entity, Sprite, { textureId: 1, tintR: 255, tintG: 255, tintB: 255, alpha: 255 });
+      world.add(entity, Audio, { soundId: 0, volume: 1.0, loop: 0, playing: 0 });
+      world.add(entity, Particle, { emissionRate: 10, lifetime: 2, speed: 5, size: 1 });
+      world.add(entity, Light, { intensity: 1, radius: 100, colorR: 255, colorG: 255, colorB: 255 });
+      world.add(entity, Camera, { fov: 60, near: 0.1, far: 1000, targetId: 0 });
+    }
+    const addTime = performance.now() - addStart;
+
+    console.log(`Spawn 10k entities: ${spawnTime.toFixed(2)}ms`);
+    console.log(`Add 25 components to 10k entities: ${addTime.toFixed(2)}ms`);
+    console.log(`Total setup: ${(spawnTime + addTime).toFixed(2)}ms`);
+    console.log(`Average per entity: ${((spawnTime + addTime) / 10000).toFixed(3)}ms`);
+
+    expect(entities.length).toBe(10000);
+  }, { timeout: 30000 });
+
+  test("stress: complex multi-system simulation with 25 components", () => {
+    console.log("\n=== STRESS TEST: Multi-System Simulation (25 Components) ===");
+
+    const entityCounts = [500, 1000, 2500, 5000, 10000];
+
+    for (const count of entityCounts) {
+      const world = new World({
+        maxEntities: count,
+        components: ALL_COMPONENTS,
+      });
+
+      // Setup entities with all components
+      for (let i = 0; i < count; i++) {
+        const entity = world.spawn();
+        world.add(entity, Transform, { x: Math.random() * 1000, y: Math.random() * 1000, z: 0, rotation: 0, scale: 1 });
+        world.add(entity, Velocity, { vx: Math.random() * 10 - 5, vy: Math.random() * 10 - 5, vz: 0 });
+        world.add(entity, Acceleration, { ax: 0, ay: 0, az: 0 });
+        world.add(entity, Health, { current: 100, max: 100 });
+        world.add(entity, Armor, { physical: 50, magical: 30 });
+        world.add(entity, Damage, { physical: 20, magical: 10, critical: 1.5 });
+        world.add(entity, Stats, { strength: 10, dexterity: 10, intelligence: 10, vitality: 10 });
+        world.add(entity, Inventory, { slot1: 0, slot2: 0, slot3: 0, slot4: 0, gold: 100 });
+        world.add(entity, Animation, { currentFrame: 0, totalFrames: 10, fps: 30, loop: 1 });
+        world.add(entity, Collider, { width: 32, height: 32, offsetX: 0, offsetY: 0 });
+        world.add(entity, Rigidbody, { mass: 1, drag: 0.1, angularDrag: 0.05, useGravity: 1 });
+        world.add(entity, AI, { state: 0, targetId: 0, aggroRange: 100, chaseSpeed: 5 });
+        world.add(entity, Cooldowns, { ability1: 0, ability2: 0, ability3: 0, ability4: 0 });
+        world.add(entity, Status, { stunned: 0, slowed: 0, poisoned: 0, burning: 0, frozen: 0, invulnerable: 0 });
+        world.add(entity, Team, { id: Math.floor(Math.random() * 4), rank: 1 });
+        world.add(entity, Experience, { current: 0, level: 1, toNextLevel: 100 });
+        world.add(entity, Network, { ownerId: i, lastSyncTime: 0, dirty: 0 });
+        world.add(entity, Sprite, { textureId: 1, tintR: 255, tintG: 255, tintB: 255, alpha: 255 });
+      }
+
+      // Run simulation for 60 frames
+      const frameCount = 60;
+      const deltaTime = 0.016;
+      const frameTimes: number[] = [];
+
+      for (let frame = 0; frame < frameCount; frame++) {
+        const frameStart = performance.now();
+
+        // System 1: Physics - Apply acceleration to velocity
+        for (const entity of world.query(Velocity, Acceleration)) {
+          const v = world.get(entity, Velocity);
+          const a = world.get(entity, Acceleration);
+          world.update(entity, Velocity, {
+            vx: v.vx + a.ax * deltaTime,
+            vy: v.vy + a.ay * deltaTime,
+            vz: v.vz + a.az * deltaTime,
+          });
+        }
+
+        // System 2: Movement - Apply velocity to position
+        for (const entity of world.query(Transform, Velocity)) {
+          const t = world.get(entity, Transform);
+          const v = world.get(entity, Velocity);
+          world.update(entity, Transform, {
+            x: t.x + v.vx * deltaTime,
+            y: t.y + v.vy * deltaTime,
+            z: t.z + v.vz * deltaTime,
+          });
+        }
+
+        // System 3: Rotation - Update rotation based on velocity
+        for (const entity of world.query(Transform, Velocity)) {
+          const v = world.get(entity, Velocity);
+          if (v.vx !== 0 || v.vy !== 0) {
+            world.update(entity, Transform, {
+              rotation: Math.atan2(v.vy, v.vx),
+            });
+          }
+        }
+
+        // System 4: Rigidbody - Apply drag
+        for (const entity of world.query(Velocity, Rigidbody)) {
+          const v = world.get(entity, Velocity);
+          const rb = world.get(entity, Rigidbody);
+          const drag = 1 - rb.drag;
+          world.update(entity, Velocity, {
+            vx: v.vx * drag,
+            vy: v.vy * drag,
+            vz: v.vz * drag,
+          });
+        }
+
+        // System 5: Animation - Update animation frames
+        for (const entity of world.query(Animation)) {
+          const anim = world.get(entity, Animation);
+          const newFrame = (anim.currentFrame + 1) % anim.totalFrames;
+          world.update(entity, Animation, { currentFrame: newFrame });
+        }
+
+        // System 6: Health regeneration
+        if (frame % 30 === 0) {
+          for (const entity of world.query(Health, Stats)) {
+            const h = world.get(entity, Health);
+            const stats = world.get(entity, Stats);
+            if (h.current < h.max) {
+              const regen = Math.floor(stats.vitality * 0.1);
+              world.update(entity, Health, {
+                current: Math.min(h.current + regen, h.max),
+              });
+            }
+          }
+        }
+
+        // System 7: Cooldown reduction
+        for (const entity of world.query(Cooldowns)) {
+          const cd = world.get(entity, Cooldowns);
+          world.update(entity, Cooldowns, {
+            ability1: Math.max(0, cd.ability1 - deltaTime),
+            ability2: Math.max(0, cd.ability2 - deltaTime),
+            ability3: Math.max(0, cd.ability3 - deltaTime),
+            ability4: Math.max(0, cd.ability4 - deltaTime),
+          });
+        }
+
+        // System 8: Status effect processing
+        for (const entity of world.query(Status, Health)) {
+          const status = world.get(entity, Status);
+          const h = world.get(entity, Health);
+          let damage = 0;
+
+          if (status.poisoned) damage += 1;
+          if (status.burning) damage += 2;
+
+          if (damage > 0 && !status.invulnerable) {
+            world.update(entity, Health, {
+              current: Math.max(0, h.current - damage),
+            });
+          }
+        }
+
+        // System 9: AI state machine
+        if (frame % 10 === 0) {
+          for (const entity of world.query(AI, Transform)) {
+            const ai = world.get(entity, AI);
+            const newState = (ai.state + 1) % 4; // Cycle through states
+            world.update(entity, AI, { state: newState });
+          }
+        }
+
+        // System 10: Network dirty flag
+        for (const entity of world.query(Network, Transform)) {
+          world.update(entity, Network, {
+            dirty: 1,
+            lastSyncTime: frame * deltaTime,
+          });
+        }
+
+        // System 11: Experience gain (every second)
+        if (frame % 60 === 0) {
+          for (const entity of world.query(Experience)) {
+            const exp = world.get(entity, Experience);
+            const newExp = exp.current + 10;
+            if (newExp >= exp.toNextLevel) {
+              world.update(entity, Experience, {
+                current: 0,
+                level: exp.level + 1,
+                toNextLevel: exp.toNextLevel * 2,
+              });
+            } else {
+              world.update(entity, Experience, { current: newExp });
+            }
+          }
+        }
+
+        // System 12: Boundary wrapping
+        for (const entity of world.query(Transform)) {
+          const t = world.get(entity, Transform);
+          let updated = false;
+          let newX = t.x, newY = t.y;
+
+          if (t.x < 0) { newX = 1000; updated = true; }
+          if (t.x > 1000) { newX = 0; updated = true; }
+          if (t.y < 0) { newY = 1000; updated = true; }
+          if (t.y > 1000) { newY = 0; updated = true; }
+
+          if (updated) {
+            world.update(entity, Transform, { x: newX, y: newY });
+          }
+        }
+
+        frameTimes.push(performance.now() - frameStart);
+      }
+
+      const avgFrameTime = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+      const maxFrameTime = Math.max(...frameTimes);
+      const minFrameTime = Math.min(...frameTimes);
+      const fps = 1000 / avgFrameTime;
+      const fps60 = avgFrameTime < 16.67 ? "✅" : "❌";
+      const fps30 = avgFrameTime < 33.33 ? "✅" : "⚠️";
+
+      console.log(`${count.toLocaleString()} entities (25 components): ${avgFrameTime.toFixed(2)}ms avg (${fps.toFixed(0)} FPS)`);
+      console.log(`  60fps: ${fps60} | 30fps: ${fps30} | Min: ${minFrameTime.toFixed(2)}ms | Max: ${maxFrameTime.toFixed(2)}ms`);
+    }
+
+    expect(true).toBe(true);
+  }, { timeout: 30000 });
+
+  test("stress: query performance with many components", () => {
+    console.log("\n=== STRESS TEST: Query Performance (25 Components) ===");
+
+    const world = new World({
+      maxEntities: 10000,
+      components: ALL_COMPONENTS,
+    });
+
+    // Setup 10,000 entities with all components
+    for (let i = 0; i < 10000; i++) {
+      const entity = world.spawn();
+      world.add(entity, Transform, { x: i, y: i, z: 0, rotation: 0, scale: 1 });
+      world.add(entity, Velocity, { vx: 1, vy: 1, vz: 0 });
+      world.add(entity, Health, { current: 100, max: 100 });
+      world.add(entity, Armor, { physical: 50, magical: 30 });
+      world.add(entity, Stats, { strength: 10, dexterity: 10, intelligence: 10, vitality: 10 });
+      world.add(entity, AI, { state: 0, targetId: 0, aggroRange: 100, chaseSpeed: 5 });
+      world.add(entity, Team, { id: i % 4, rank: 1 });
+    }
+
+    // Test queries with increasing component requirements
+    const queryTests = [
+      { components: [Transform], name: "1 component (Transform)" },
+      { components: [Transform, Velocity], name: "2 components (Transform, Velocity)" },
+      { components: [Transform, Velocity, Health], name: "3 components (Transform, Velocity, Health)" },
+      { components: [Transform, Velocity, Health, Armor], name: "4 components (+Armor)" },
+      { components: [Transform, Velocity, Health, Armor, Stats], name: "5 components (+Stats)" },
+      { components: [Transform, Velocity, Health, Armor, Stats, AI], name: "6 components (+AI)" },
+      { components: [Transform, Velocity, Health, Armor, Stats, AI, Team], name: "7 components (+Team)" },
+    ];
+
+    for (const { components, name } of queryTests) {
+      const start = performance.now();
+      const results = world.query(...components);
+      const time = performance.now() - start;
+
+      console.log(`Query ${name}: ${time.toFixed(3)}ms (${results.length} results)`);
+    }
+
+    expect(true).toBe(true);
+  }, { timeout: 30000 });
+
+  test("stress: memory usage with 25 components", () => {
+    console.log("\n=== STRESS TEST: Memory Usage (25 Components) ===");
+
+    const counts = [1000, 5000, 10000];
+
+    for (const count of counts) {
+      const world = new World({
+        maxEntities: count,
+        components: ALL_COMPONENTS,
+      });
+
+      // Add all components to all entities
+      for (let i = 0; i < count; i++) {
+        const entity = world.spawn();
+        world.add(entity, Transform, { x: 0, y: 0, z: 0, rotation: 0, scale: 1 });
+        world.add(entity, Velocity, { vx: 1, vy: 1, vz: 0 });
+        world.add(entity, Acceleration, { ax: 0, ay: 0, az: 0 });
+        world.add(entity, Health, { current: 100, max: 100 });
+        world.add(entity, Armor, { physical: 50, magical: 30 });
+        world.add(entity, Damage, { physical: 20, magical: 10, critical: 1.5 });
+        world.add(entity, Stats, { strength: 10, dexterity: 10, intelligence: 10, vitality: 10 });
+        world.add(entity, Inventory, { slot1: 0, slot2: 0, slot3: 0, slot4: 0, gold: 100 });
+        world.add(entity, Animation, { currentFrame: 0, totalFrames: 10, fps: 30, loop: 1 });
+        world.add(entity, Collider, { width: 32, height: 32, offsetX: 0, offsetY: 0 });
+        world.add(entity, Rigidbody, { mass: 1, drag: 0.1, angularDrag: 0.05, useGravity: 1 });
+        world.add(entity, AI, { state: 0, targetId: 0, aggroRange: 100, chaseSpeed: 5 });
+        world.add(entity, Cooldowns, { ability1: 0, ability2: 0, ability3: 0, ability4: 0 });
+        world.add(entity, Status, { stunned: 0, slowed: 0, poisoned: 0, burning: 0, frozen: 0, invulnerable: 0 });
+        world.add(entity, Team, { id: 1, rank: 1 });
+        world.add(entity, Experience, { current: 0, level: 1, toNextLevel: 100 });
+        world.add(entity, Lifetime, { remaining: 999, fadeOut: 0 });
+        world.add(entity, Parent, { entityId: 0 });
+        world.add(entity, Children, { count: 0, child1: 0, child2: 0, child3: 0, child4: 0 });
+        world.add(entity, Network, { ownerId: 0, lastSyncTime: 0, dirty: 0 });
+        world.add(entity, Sprite, { textureId: 1, tintR: 255, tintG: 255, tintB: 255, alpha: 255 });
+        world.add(entity, Audio, { soundId: 0, volume: 1.0, loop: 0, playing: 0 });
+        world.add(entity, Particle, { emissionRate: 10, lifetime: 2, speed: 5, size: 1 });
+        world.add(entity, Light, { intensity: 1, radius: 100, colorR: 255, colorG: 255, colorB: 255 });
+        world.add(entity, Camera, { fov: 60, near: 0.1, far: 1000, targetId: 0 });
+      }
+
+      // Calculate theoretical memory
+      const componentSizes = {
+        Transform: 20, // 5 f32
+        Velocity: 12, // 3 f32
+        Acceleration: 12, // 3 f32
+        Health: 4, // 2 u16
+        Armor: 4, // 2 u16
+        Damage: 8, // 2 u16 + 1 f32
+        Stats: 8, // 4 u16
+        Inventory: 20, // 5 u32
+        Animation: 6, // 2 u16 + 2 u8
+        Collider: 16, // 4 f32
+        Rigidbody: 13, // 3 f32 + 1 u8
+        AI: 13, // 1 u8 + 1 u32 + 2 f32
+        Cooldowns: 16, // 4 f32
+        Status: 6, // 6 u8
+        Team: 2, // 2 u8
+        Experience: 10, // 1 u32 + 1 u16 + 1 u32
+        Lifetime: 5, // 1 f32 + 1 u8
+        Parent: 4, // 1 u32
+        Children: 21, // 1 u8 + 5 u32
+        Network: 9, // 1 u32 + 1 f32 + 1 u8
+        Sprite: 9, // 1 u32 + 5 u8
+        Audio: 10, // 1 u32 + 1 f32 + 2 u8
+        Particle: 16, // 4 f32
+        Light: 11, // 2 f32 + 3 u8
+        Camera: 16, // 3 f32 + 1 u32
+      };
+
+      const totalComponentSize = Object.values(componentSizes).reduce((a, b) => a + b, 0);
+      const totalMemory = count * totalComponentSize;
+
+      console.log(`${count.toLocaleString()} entities: ${(totalMemory / 1024).toFixed(2)} KB (~${totalComponentSize} bytes/entity)`);
+    }
+
+    expect(true).toBe(true);
+  }, { timeout: 30000 });
+
+  test("stress: archetype changes with many components", () => {
+    console.log("\n=== STRESS TEST: Archetype Changes (25 Components) ===");
+
+    const world = new World({
+      maxEntities: 10000,
+      components: ALL_COMPONENTS,
+    });
+
+    // Create 10k entities with base components
+    const entities: number[] = [];
+    for (let i = 0; i < 10000; i++) {
+      const entity = world.spawn();
+      world.add(entity, Transform, { x: 0, y: 0, z: 0, rotation: 0, scale: 1 });
+      world.add(entity, Velocity, { vx: 1, vy: 1, vz: 0 });
+      entities.push(entity);
+    }
+
+    // Test adding/removing components (archetype changes)
+    const addStart = performance.now();
+    for (const entity of entities) {
+      world.add(entity, Health, { current: 100, max: 100 });
+      world.add(entity, Armor, { physical: 50, magical: 30 });
+      world.add(entity, Damage, { physical: 20, magical: 10, critical: 1.5 });
+    }
+    const addTime = performance.now() - addStart;
+
+    const removeStart = performance.now();
+    for (const entity of entities) {
+      world.remove(entity, Armor);
+      world.remove(entity, Damage);
+    }
+    const removeTime = performance.now() - removeStart;
+
+    console.log(`Add 3 components to 10k entities: ${addTime.toFixed(2)}ms`);
+    console.log(`Remove 2 components from 10k entities: ${removeTime.toFixed(2)}ms`);
+    console.log(`Total archetype change time: ${(addTime + removeTime).toFixed(2)}ms`);
+
+    expect(true).toBe(true);
+  }, { timeout: 30000 });
+});
