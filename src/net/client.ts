@@ -499,6 +499,13 @@ export class ClientNetwork<TSnapshots = unknown> {
 			// Decode using snapshot registry (returns { type, snapshot })
 			const decoded = this.snapshotRegistry.decode<Partial<TSnapshots>>(data);
 
+			// Save reference to pooled object before replacing it
+			const pooledUpdates = decoded.snapshot.updates;
+
+			// Shallow copy the updates to allow handlers to store references safely
+			// This prevents issues when the pooled object is reused for the next snapshot
+			decoded.snapshot.updates = { ...decoded.snapshot.updates };
+
 			this.log(`Received snapshot (type: ${decoded.type}, tick: ${decoded.snapshot.tick})`);
 
 			// Call all type-specific handlers if registered
@@ -514,6 +521,10 @@ export class ClientNetwork<TSnapshots = unknown> {
 			} else {
 				this.log(`No handler registered for snapshot type: ${decoded.type}`);
 			}
+
+			// Release the original pooled object back to the pool
+			// This enables efficient memory reuse across snapshot updates
+			this.snapshotRegistry.release(decoded.type, pooledUpdates);
 		} catch (error) {
 			this.log(`Failed to decode snapshot: ${error}`);
 		}
@@ -532,6 +543,13 @@ export class ClientNetwork<TSnapshots = unknown> {
 			// Decode using RPC registry (returns { method, data })
 			const decoded = this.rpcRegistry.decode(data);
 
+			// Save reference to pooled object before replacing it
+			const pooledData = decoded.data;
+
+			// Shallow copy the data to allow handlers to store references safely
+			// This prevents issues when the pooled object is reused for the next RPC
+			decoded.data = { ...decoded.data };
+
 			this.log(`Received RPC (method: ${decoded.method})`);
 
 			// Call all method-specific handlers if registered
@@ -547,6 +565,10 @@ export class ClientNetwork<TSnapshots = unknown> {
 			} else {
 				this.log(`No handler registered for RPC method: ${decoded.method}`);
 			}
+
+			// Release the original pooled object back to the pool
+			// This enables efficient memory reuse across RPC calls
+			this.rpcRegistry.release(decoded.method, pooledData);
 		} catch (error) {
 			this.log(`Failed to decode RPC: ${error}`);
 		}

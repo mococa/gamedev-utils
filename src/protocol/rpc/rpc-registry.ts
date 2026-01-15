@@ -153,4 +153,24 @@ export class RpcRegistry {
 	getMethodId(method: string): number | undefined {
 		return this.methodToId.get(method);
 	}
+
+	/**
+	 * Release a decoded RPC data object back to the pool.
+	 * Call this after you're done processing the RPC to enable object pooling.
+	 *
+	 * @param method The RPC method name (same as used in decode)
+	 * @param data The RPC data object to release
+	 */
+	release(method: string, data: any): void {
+		const codec = this.codecs.get(method);
+
+		if (!codec) {
+			throw new Error(`RPC "${method}" is not registered`);
+		}
+
+		// Only release if the codec supports pooling
+		if ('release' in codec && typeof codec.release === 'function') {
+			codec.release(data);
+		}
+	}
 }

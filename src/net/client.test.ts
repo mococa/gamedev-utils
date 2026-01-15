@@ -2,10 +2,13 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import { ClientNetwork } from "./client";
 import { IntentRegistry } from "../protocol/intent/intent-registry";
 import { SnapshotRegistry } from "../protocol/snapshot/snapshot-registry";
+import { RpcRegistry } from "../protocol/rpc/rpc-registry";
 import { PooledCodec } from "../core/pooled-codec/pooled-codec";
 import { BinaryPrimitives } from "../core/binary-codec";
 import { defineIntent } from "../protocol/intent/define-intent";
+import { defineRPC } from "../protocol/rpc/define-rpc";
 import type { TransportAdapter } from "./types";
+import { MessageType } from "./types";
 import type { Snapshot } from "../protocol/snapshot/snapshot";
 
 // Define move intent using defineIntent
@@ -35,6 +38,7 @@ type GameSnapshots = PlayerUpdate | ScoreUpdate;
 class MockTransportAdapter implements TransportAdapter {
 	messageHandler: ((data: Uint8Array) => void) | null = null;
 	closeHandler: (() => void) | null = null;
+	openHandler: (() => void) | null = null;
 	public sentMessages: Uint8Array[] = [];
 	public closed = false;
 
@@ -48,6 +52,10 @@ class MockTransportAdapter implements TransportAdapter {
 
 	onClose(handler: () => void): void {
 		this.closeHandler = handler;
+	}
+
+	onOpen(handler: () => void): void {
+		this.openHandler = handler;
 	}
 
 	close(): void {
@@ -105,6 +113,11 @@ describe("ClientNetwork", () => {
 			snapshotRegistry,
 			config: { debug: false },
 		});
+
+		// Simulate connection opened
+		if (transport.openHandler) {
+			transport.openHandler();
+		}
 	});
 
 	describe("Construction", () => {
@@ -339,7 +352,7 @@ describe("ClientNetwork", () => {
 	});
 
 	describe("Connection lifecycle", () => {
-		test("should trigger onConnect handler on construction", () => {
+		test("should trigger onConnect handler when connection opens", () => {
 			let connectCalled = false;
 			const newTransport = new MockTransportAdapter();
 
@@ -353,8 +366,17 @@ describe("ClientNetwork", () => {
 				connectCalled = true;
 			});
 
-			// Already connected during construction, but handler added after
+			// Not connected yet - waiting for transport to open
 			expect(connectCalled).toBe(false);
+			expect(newClient.isConnected()).toBe(false);
+
+			// Trigger open event
+			if (newTransport.openHandler) {
+				newTransport.openHandler();
+			}
+
+			// Now should be connected and handler should have been called
+			expect(connectCalled).toBe(true);
 			expect(newClient.isConnected()).toBe(true);
 		});
 
@@ -521,6 +543,251 @@ describe("ClientNetwork", () => {
 
 			console.log = originalLog;
 			expect(logs.filter((l) => l.includes("[ClientNetwork]")).length).toBeGreaterThan(0);
+		});
+	});
+
+	describe("Memory pooling", () => {
+		test("should reuse pooled objects across snapshots", () => {
+			const transport = new MockTransportAdapter();
+			const client = new ClientNetwork<GameSnapshots>({
+				transport,
+				intentRegistry,
+				snapshotRegistry,
+				config: { debug: false },
+			});
+
+			const receivedSnapshots: Array<Snapshot<PlayerUpdate>> = [];
+
+			client.onSnapshot<PlayerUpdate>("player", (snapshot) => {
+				// Store the snapshot - this should be safe due to shallow copy
+				receivedSnapshots.push(snapshot);
+			});
+
+			// Simulate opening connection
+			if (transport.openHandler) transport.openHandler();
+
+			// Send first snapshot (wrap with MessageType.SNAPSHOT header)
+			const snapshot1Data = snapshotRegistry.encode("player", {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			});
+			const snapshot1 = new Uint8Array(1 + snapshot1Data.byteLength);
+			snapshot1[0] = MessageType.SNAPSHOT;
+			snapshot1.set(snapshot1Data, 1);
+			if (transport.messageHandler) transport.messageHandler(snapshot1);
+
+			// Send second snapshot with different data
+			const snapshot2Data = snapshotRegistry.encode("player", {
+				tick: 2,
+				updates: { x: 15, y: 25, health: 90 },
+			});
+			const snapshot2 = new Uint8Array(1 + snapshot2Data.byteLength);
+			snapshot2[0] = MessageType.SNAPSHOT;
+			snapshot2.set(snapshot2Data, 1);
+			if (transport.messageHandler) transport.messageHandler(snapshot2);
+
+			// Verify both snapshots were received correctly
+			expect(receivedSnapshots.length).toBe(2);
+
+			// First snapshot should maintain its original values
+			expect(receivedSnapshots[0].tick).toBe(1);
+			expect(receivedSnapshots[0].updates.x).toBe(10);
+			expect(receivedSnapshots[0].updates.y).toBe(20);
+			expect(receivedSnapshots[0].updates.health).toBe(100);
+
+			// Second snapshot should have its own values
+			expect(receivedSnapshots[1].tick).toBe(2);
+			expect(receivedSnapshots[1].updates.x).toBe(15);
+			expect(receivedSnapshots[1].updates.y).toBe(25);
+			expect(receivedSnapshots[1].updates.health).toBe(90);
+
+			// The updates objects should be different references (shallow copy worked)
+			expect(receivedSnapshots[0].updates).not.toBe(receivedSnapshots[1].updates);
+		});
+
+		test("handlers can safely store references to snapshot.updates", () => {
+			const transport = new MockTransportAdapter();
+			const client = new ClientNetwork<GameSnapshots>({
+				transport,
+				intentRegistry,
+				snapshotRegistry,
+				config: { debug: false },
+			});
+
+			// Simulate a reconciliator-like usage pattern
+			let storedState: Partial<PlayerUpdate> | null = null;
+
+			client.onSnapshot<PlayerUpdate>("player", (snapshot) => {
+				// Store the state directly (common pattern in reconciliation)
+				storedState = snapshot.updates;
+			});
+
+			// Simulate opening connection
+			if (transport.openHandler) transport.openHandler();
+
+			// Send first snapshot (wrap with MessageType.SNAPSHOT header)
+			const snapshot1Data = snapshotRegistry.encode("player", {
+				tick: 1,
+				updates: { x: 10, y: 20, health: 100 },
+			});
+			const snapshot1 = new Uint8Array(1 + snapshot1Data.byteLength);
+			snapshot1[0] = MessageType.SNAPSHOT;
+			snapshot1.set(snapshot1Data, 1);
+			if (transport.messageHandler) transport.messageHandler(snapshot1);
+
+			const firstState = storedState as unknown as Partial<PlayerUpdate>;
+			expect(firstState?.x).toBe(10);
+
+			// Send second snapshot (wrap with MessageType.SNAPSHOT header)
+			const snapshot2Data = snapshotRegistry.encode("player", {
+				tick: 2,
+				updates: { x: 99, y: 99, health: 50 },
+			});
+			const snapshot2 = new Uint8Array(1 + snapshot2Data.byteLength);
+			snapshot2[0] = MessageType.SNAPSHOT;
+			snapshot2.set(snapshot2Data, 1);
+			if (transport.messageHandler) transport.messageHandler(snapshot2);
+
+			// First stored state should NOT be mutated by the second snapshot
+			expect(firstState?.x).toBe(10);
+			expect(firstState?.y).toBe(20);
+			expect(firstState?.health).toBe(100);
+
+			// New stored state should have the new values
+			expect((storedState as unknown as Partial<PlayerUpdate>)?.x).toBe(99);
+			expect((storedState as unknown as Partial<PlayerUpdate>)?.y).toBe(99);
+			expect((storedState as unknown as Partial<PlayerUpdate>)?.health).toBe(50);
+		});
+	});
+
+	describe("RPC Memory pooling", () => {
+		// Define RPC for testing
+		const TestRPC = defineRPC({
+			method: "testRpc",
+			schema: {
+				value: BinaryPrimitives.u32,
+				message: BinaryPrimitives.string(32),
+			},
+		});
+
+		interface TestRPCData {
+			value: number;
+			message: string;
+		}
+
+		test("should reuse pooled objects across RPC calls", () => {
+			const rpcRegistry = new RpcRegistry();
+			rpcRegistry.register(TestRPC);
+
+			const transport = new MockTransportAdapter();
+			const client = new ClientNetwork<GameSnapshots>({
+				transport,
+				intentRegistry,
+				snapshotRegistry,
+				rpcRegistry,
+				config: { debug: false },
+			});
+
+			const receivedRpcs: Array<TestRPCData> = [];
+
+			client.onRPC(TestRPC, (data) => {
+				// Store the RPC data - this should be safe due to shallow copy
+				receivedRpcs.push(data);
+			});
+
+			// Simulate opening connection
+			if (transport.openHandler) transport.openHandler();
+
+			// Send first RPC
+			const rpc1Data = rpcRegistry.encode(TestRPC, {
+				value: 100,
+				message: "first",
+			});
+			const rpc1 = new Uint8Array(1 + rpc1Data.byteLength);
+			rpc1[0] = MessageType.CUSTOM;
+			rpc1.set(rpc1Data, 1);
+			if (transport.messageHandler) transport.messageHandler(rpc1);
+
+			// Send second RPC with different data
+			const rpc2Data = rpcRegistry.encode(TestRPC, {
+				value: 200,
+				message: "second",
+			});
+			const rpc2 = new Uint8Array(1 + rpc2Data.byteLength);
+			rpc2[0] = MessageType.CUSTOM;
+			rpc2.set(rpc2Data, 1);
+			if (transport.messageHandler) transport.messageHandler(rpc2);
+
+			// Verify both RPCs were received correctly
+			expect(receivedRpcs.length).toBe(2);
+
+			// First RPC should maintain its original values
+			expect(receivedRpcs[0].value).toBe(100);
+			expect(receivedRpcs[0].message).toBe("first");
+
+			// Second RPC should have its own values
+			expect(receivedRpcs[1].value).toBe(200);
+			expect(receivedRpcs[1].message).toBe("second");
+
+			// The data objects should be different references (shallow copy worked)
+			expect(receivedRpcs[0]).not.toBe(receivedRpcs[1]);
+		});
+
+		test("handlers can safely store references to RPC data", () => {
+			const rpcRegistry = new RpcRegistry();
+			rpcRegistry.register(TestRPC);
+
+			const transport = new MockTransportAdapter();
+			const client = new ClientNetwork<GameSnapshots>({
+				transport,
+				intentRegistry,
+				snapshotRegistry,
+				rpcRegistry,
+				config: { debug: false },
+			});
+
+			// Simulate storing RPC data (common pattern)
+			let storedData: TestRPCData | null = null;
+
+			client.onRPC(TestRPC, (data) => {
+				// Store the data directly
+				storedData = data;
+			});
+
+			// Simulate opening connection
+			if (transport.openHandler) transport.openHandler();
+
+			// Send first RPC
+			const rpc1Data = rpcRegistry.encode(TestRPC, {
+				value: 42,
+				message: "hello",
+			});
+			const rpc1 = new Uint8Array(1 + rpc1Data.byteLength);
+			rpc1[0] = MessageType.CUSTOM;
+			rpc1.set(rpc1Data, 1);
+			if (transport.messageHandler) transport.messageHandler(rpc1);
+
+			const firstData = storedData;
+			expect((firstData as unknown as TestRPCData)?.value).toBe(42);
+			expect((firstData as unknown as TestRPCData)?.message).toBe("hello");
+
+			// Send second RPC
+			const rpc2Data = rpcRegistry.encode(TestRPC, {
+				value: 999,
+				message: "world",
+			});
+			const rpc2 = new Uint8Array(1 + rpc2Data.byteLength);
+			rpc2[0] = MessageType.CUSTOM;
+			rpc2.set(rpc2Data, 1);
+			if (transport.messageHandler) transport.messageHandler(rpc2);
+
+			// First stored data should NOT be mutated by the second RPC
+			expect((firstData as unknown as TestRPCData)?.value).toBe(42);
+			expect((firstData as unknown as TestRPCData)?.message).toBe("hello");
+
+			// New stored data should have the new values
+			expect((storedData as unknown as TestRPCData)?.value).toBe(999);
+			expect((storedData as unknown as TestRPCData)?.message).toBe("world");
 		});
 	});
 });

@@ -178,4 +178,24 @@ export class SnapshotRegistry<T extends Object = {}> {
   getTypes(): string[] {
     return Array.from(this.codecs.keys());
   }
+
+  /**
+   * Release a decoded snapshot's updates object back to the pool.
+   * Call this after you're done processing the snapshot to enable object pooling.
+   *
+   * @param type The snapshot type (same as used in decode)
+   * @param updates The updates object to release
+   */
+  release<U extends Partial<T>>(type: string, updates: U): void {
+    const codec = this.codecs.get(type);
+
+    if (!codec) {
+      throw new Error(`No codec registered for snapshot type "${type}"`);
+    }
+
+    // Only release if the codec supports pooling
+    if ('release' in codec && typeof codec.release === 'function') {
+      codec.release(updates);
+    }
+  }
 }
