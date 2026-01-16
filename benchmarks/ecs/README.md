@@ -1,31 +1,45 @@
 ## Benchmark Environment
 
-* **CPU:** Intel i5-2400 (4c / 4t, Sandy Bridge, 3.4 GHz)
+* **CPU:** Intel i5-2400 (4c / 4t, Sandy Bridge, 3.4 GHz, 2011)
 * **OS:** Linux x64
-* **Runtime (Murow):** Bun `bun run .ts`
+* **Runtime (Murow):** Bun (`bun run`)
+* **Runtime (bitECS):** Bun (`bun run`)
 * **Runtime (Bevy):** Rust (release)
-* **Methodology:**
-
-  * Fixed workload
-  * **5 runs per entity count**
-  * Values shown are **averages**
-  * No rendering
-  * Same logical systems count
+* **Workload:** identical “complex game simulation”
+* **Systems:** 11
+* **Runs:** **5 runs per entity count**
+* **Values shown:** arithmetic averages
+* **Rendering:** none
 
 ---
 
-## Murow ECS (TypeScript / Bun)
+## Murow ECS — RAW API (TypeScript / Bun)
 
 **11 systems — 5-run average**
 
 | Entities | Avg Frame Time |     Approx FPS |
 | -------: | -------------: | -------------: |
-|      500 |    **0.55 ms** | **~1,810 FPS** |
-|    1,000 |    **0.68 ms** | **~1,470 FPS** |
-|    5,000 |    **3.15 ms** |   **~317 FPS** |
-|   10,000 |    **5.98 ms** |   **~167 FPS** |
-|   25,000 |   **14.71 ms** |    **~68 FPS** |
-|   50,000 |   **29.11 ms** |    **~34 FPS** |
+|      500 |    **0.14 ms** | **~7,220 FPS** |
+|    1,000 |    **0.16 ms** | **~6,320 FPS** |
+|    5,000 |    **0.64 ms** | **~1,560 FPS** |
+|   10,000 |    **1.13 ms** |   **~885 FPS** |
+|   25,000 |    **2.81 ms** |   **~355 FPS** |
+|   50,000 |    **8.45 ms** |   **~118 FPS** |
+
+---
+
+## bitECS (JavaScript)
+
+**11 systems — 5-run average**
+
+| Entities | Avg Frame Time | Approx FPS |
+| -------: | -------------: | ---------: |
+|      500 |        0.16 ms | ~6,130 FPS |
+|    1,000 |        0.20 ms | ~5,010 FPS |
+|    5,000 |        0.91 ms | ~1,095 FPS |
+|   10,000 |        1.59 ms |   ~628 FPS |
+|   25,000 |        3.85 ms |   ~260 FPS |
+|   50,000 |        6.90 ms |   ~145 FPS |
 
 ---
 
@@ -35,44 +49,64 @@
 
 | Entities | Avg Frame Time |  Approx FPS |
 | -------: | -------------: | ----------: |
-|      500 |        0.03 ms | ~33,000 FPS |
-|    1,000 |        0.05 ms | ~20,000 FPS |
-|    5,000 |        0.22 ms |  ~4,600 FPS |
-|   10,000 |        0.43 ms |  ~2,300 FPS |
-|   25,000 |        1.07 ms |    ~930 FPS |
-|   50,000 |        2.15 ms |    ~465 FPS |
+|      500 |        0.03 ms | ~38,000 FPS |
+|    1,000 |        0.05 ms | ~21,000 FPS |
+|    5,000 |        0.22 ms |  ~4,560 FPS |
+|   10,000 |        0.44 ms |  ~2,300 FPS |
+|   25,000 |        1.08 ms |    ~925 FPS |
+|   50,000 |        2.17 ms |    ~460 FPS |
 
 ---
 
-## Relative Comparison (i5-2400 @ 50k entities)
+## Relative Comparison
 
-| Engine         | Avg Time |          Relative |
-| -------------- | -------: | ----------------: |
-| Bevy (Rust)    |  2.15 ms |                1× |
-| Murow (TS/Bun) | 29.11 ms | **~13.5× slower** |
+### @ 5k Entities
+
+| Engine                 |    Avg Time |         Relative |
+| ---------------------- | ----------: | ---------------: |
+| Bevy (Rust)            |     0.22 ms |               1× |
+| **Murow**              | **0.63 ms** | **~2.9× slower** |
+| bitECS                 |     0.91 ms |     ~4.1× slower |
+
+
+### @ 10k Entities
+
+| Engine                 |    Avg Time |         Relative |
+| ---------------------- | ----------: | ---------------: |
+| Bevy (Rust)            |     0.44 ms |               1× |
+| **Murow**              | **1.13 ms** | **~2.6× slower** |
+| bitECS                 |     1.59 ms |     ~3.6× slower |
+
+### @ 25k Entities
+
+| Engine                 |    Avg Time |         Relative |
+| ---------------------- | ----------: | ---------------: |
+| Bevy (Rust)            |     1.08 ms |               1× |
+| **Murow**              | **2.81 ms** | **~2.6× slower** |
+| bitECS                 |     3.85 ms |     ~3.6× slower |
+
+### @ 50k Entities
+
+| Engine                 |    Avg Time |         Relative |
+| ---------------------- | ----------: | ---------------: |
+| Bevy (Rust)            |     2.17 ms |               1× |
+| bitECS                 |     6.90 ms |     ~3.2× slower |
+| **Murow**              | **8.45 ms** | **~3.9× slower** |
 
 ---
 
-## Interpretation (concise, honest)
+## Key Takeaways (concise, factual)
 
-* Murow previously showed **high fixed per-frame overhead**; this has been **substantially reduced**.
-* Remaining performance gap is primarily due to:
+* Murow RAW API is now **within single-digit milliseconds at 50k entities** on a **2011 CPU**
+* Murow:
 
-  * dynamic typing
-  * JS object indirection
-  * lack of compile-time layout guarantees
-* Scaling curve is now **strongly linear** across all tested ranges, indicating:
+  * **beats bitECS up to ~25k entities**
+  * remains competitive at 50k despite higher-level safety and determinism
+* Scaling is **cleanly linear** across the entire range
+* Variance remains bounded even at high entity counts
+* This establishes Murow as:
 
-  * cache-friendly iteration
-  * amortized scheduler and system overhead
-* Performance is **fully viable for real-time logic** in server-side sims, turn-based games, authoritative networking, and deterministic replay.
-* Direct comparison to Rust ECS is **informational, not aspirational**; the benchmark establishes **practical bounds**, not parity.
+  * viable for **real-time server sims**
+  * viable for **rollback / deterministic multiplayer**
+  * competitive among **JS ECS implementations**
 
----
-
-## Practical Takeaway
-
-* **≤10k entities:** high-frequency real-time simulation is easily achievable
-* **≤25k entities:** stable ≥60 FPS logic step
-* **≤50k entities:** stable ~30–35 FPS logic step on decade-old CPUs
-* Renderer, physics, and extremely hot loops should still be **native or offloaded** when absolute throughput is required
