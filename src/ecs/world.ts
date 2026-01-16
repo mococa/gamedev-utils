@@ -702,6 +702,38 @@ export class World {
   }
 
   /**
+   * Get direct access to a component field's TypedArray for maximum performance.
+   * This bypasses the get/update API for ~3-4x faster access in hot paths.
+   *
+   * ⚠️ ADVANCED API: Use with caution!
+   * - No bounds checking
+   * - No type safety
+   * - You must ensure entities have the component
+   * - Direct array mutation bypasses any safety mechanisms
+   *
+   * @example
+   * ```typescript
+   * // High-performance system (bitECS-style)
+   * const transformX = world.getFieldArray(Transform, 'x');
+   * const transformY = world.getFieldArray(Transform, 'y');
+   * const velocityVx = world.getFieldArray(Velocity, 'vx');
+   * const velocityVy = world.getFieldArray(Velocity, 'vy');
+   *
+   * for (const entity of world.query(Transform, Velocity)) {
+   *   transformX[entity] += velocityVx[entity] * dt;
+   *   transformY[entity] += velocityVy[entity] * dt;
+   * }
+   * ```
+   */
+  getFieldArray<T extends object>(
+    component: Component<T>,
+    fieldName: keyof T
+  ): Float32Array | Int32Array | Uint32Array | Uint16Array | Uint8Array {
+    const index = this.getComponentIndex(component);
+    return this.componentStoresArray[index]!.getFieldArray(fieldName);
+  }
+
+  /**
    * Create an EntityHandle wrapper for fluent API usage.
    *
    * EntityHandle provides a chainable interface for entity operations with zero runtime overhead.
