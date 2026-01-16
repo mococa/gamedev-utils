@@ -74,14 +74,16 @@ export class World {
   private aliveEntityFlags: Uint8Array; // 1 byte per entity for alive check
 
   // Component system (array-indexed for O(1) access)
-  private componentStoresArray: (ComponentStore<any> | undefined)[];
+  /** @internal - Exposed for EntityHandle performance optimization */
+  public readonly componentStoresArray: (ComponentStore<any> | undefined)[];
   private componentMasks: Uint32Array[]; // Dynamic array of bitmask words (32 components per word)
   private componentMasks0!: Uint32Array; // Fast path: cached reference to first word (most common case)
   private numMaskWords: number = 0; // Number of allocated mask words
   private storageBackend: StorageBackend;
 
   // Component registry (Map only for initial lookup)
-  private componentMap: Map<Component<any>, number> = new Map();
+  /** @internal - Exposed for EntityHandle performance optimization */
+  public readonly componentMap: Map<Component<any>, number> = new Map();
   private components: Component<any>[] = [];
 
   // Query result cache (reusable buffers for zero allocations)
