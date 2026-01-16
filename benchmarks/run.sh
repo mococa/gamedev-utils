@@ -13,7 +13,7 @@ echo "Running Murow ECS Benchmark (TypeScript/Bun) - 5 runs..."
 echo "-----------------------------------------"
 for i in {1..5}; do
     echo "Murow run $i/5..."
-    bun run ecs/bevy/murow.ts 2>/dev/null
+    bun run ecs/murow/murow.ts 2>/dev/null
 done
 echo ""
 
@@ -34,6 +34,14 @@ else
     echo "To run Bevy benchmark, install Rust:"
     echo "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
 fi
+
+echo ""
+echo "Running Bitecs Benchmark - 5 runs..."
+echo "-----------------------------------------"
+for i in {1..5}; do
+    echo "Bitecs run $i/5..."
+    bun run ecs/bitecs/bitecs.ts 2>/dev/null
+done
 
 echo ""
 echo "========================================="
