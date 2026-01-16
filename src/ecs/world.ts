@@ -2,6 +2,8 @@ import { generateId } from "../core/generate-id";
 import { Component } from "./component";
 import { ComponentStore } from "./component-store";
 import { EntityHandle } from "./entity-handle";
+import { System } from "./system";
+import { SystemBuilder, ExecutableSystem } from "./system-builder";
 
 /**
  * Storage backend type for component data
@@ -95,6 +97,12 @@ export class World {
 
   // Query mask cache (avoid recomputing masks for same component combinations)
   private queryMaskCache: Record<string, number[]> = {};
+
+  // Reusable EntityHandle for zero allocations
+  private reusableHandle?: EntityHandle;
+
+  // Systems registered with addSystem()
+  private systems: ExecutableSystem[] = [];
 
   // Debug ID
   private worldId = generateId({ prefix: "world_" });
@@ -731,8 +739,18 @@ export class World {
     component: Component<T>,
     fieldName: keyof T
   ): Float32Array | Int32Array | Uint32Array | Uint16Array | Uint8Array {
-    const index = this.getComponentIndex(component);
-    return this.componentStoresArray[index]!.getFieldArray(fieldName);
+    // Cache array on component object for zero-cost repeated access
+    const cacheKey = `__fieldCache_${String(fieldName)}`;
+    let array = (component as any)[cacheKey];
+
+    if (array === undefined) {
+      // First access: get store and cache array
+      const index = this.getComponentIndex(component);
+      array = this.componentStoresArray[index]!.getFieldArray(fieldName);
+      (component as any)[cacheKey] = array;
+    }
+
+    return array;
   }
 
   /**
@@ -761,6 +779,101 @@ export class World {
    * ```
    */
   entity(entityId: Entity): EntityHandle {
-    return new EntityHandle(this, entityId);
+    if (!this.reusableHandle) {
+      this.reusableHandle = new EntityHandle(this, entityId);
+    } else {
+      this.reusableHandle._reset(entityId);
+    }
+    return this.reusableHandle;
+  }
+
+  /**
+   * Create a System helper with automatic field array caching.
+   *
+   * Combines the ergonomics of EntityHandle with the performance of RAW API.
+   * Field arrays are cached on first access for zero-cost abstraction.
+   *
+   * @param components - Components this system operates on
+   * @returns System instance with cached field arrays
+   *
+   * @example
+   * ```typescript
+   * // Create system once at initialization
+   * const movement = world.system(Transform, Velocity);
+   *
+   * // Access field arrays - cached on first access
+   * const { Transform_x: tx, Transform_y: ty, Velocity_vx: vx, Velocity_vy: vy } = movement.fields;
+   *
+   * // In game loop - direct array access (RAW API performance)
+   * for (const eid of movement.query()) {
+   *   tx[eid] += vx[eid] * dt;
+   *   ty[eid] += vy[eid] * dt;
+   * }
+   * ```
+   */
+  system<C extends Component<any>[]>(...components: C): System<C> {
+    return new System(this, components);
+  }
+
+  /**
+   * Create a system with ergonomic proxy-based field access.
+   *
+   * Provides a fluent API that compiles down to RAW API performance:
+   * - User writes ergonomic code with entity.component.field syntax
+   * - System automatically caches TypedArrays and creates proxies
+   * - Runtime performance matches direct array access
+   * - Full type safety with IntelliSense support
+   *
+   * @returns SystemBuilder for chaining with(), fields(), and run()
+   *
+   * @example
+   * ```typescript
+   * world
+   *   .addSystem()
+   *   .with(Transform2D, Velocity)
+   *   .fields([
+   *     { transform2d: ['x', 'y'] },
+   *     { velocity: ['vx', 'vy'] }
+   *   ])
+   *   .run((entity, deltaTime) => {
+   *     // entity.transform2d and entity.velocity are fully typed!
+   *     entity.transform2d.x += entity.velocity.vx * deltaTime;
+   *     entity.transform2d.y += entity.velocity.vy * deltaTime;
+   *   });
+   * ```
+   */
+  addSystem(): SystemBuilder<Component<any>[]> {
+    return new SystemBuilder(this, []) as any;
+  }
+
+  /**
+   * Internal method to register an executable system.
+   * Called by SystemBuilder after fields() is invoked.
+   *
+   * @internal
+   */
+  _registerSystem(system: ExecutableSystem): void {
+    this.systems.push(system);
+  }
+
+  /**
+   * Execute all registered systems.
+   *
+   * Call this in your game loop to run all systems registered via addSystem().
+   *
+   * @param deltaTime - Time delta since last frame
+   *
+   * @example
+   * ```typescript
+   * // Game loop
+   * function gameLoop(deltaTime: number) {
+   *   world.runSystems(deltaTime);
+   * }
+   * ```
+   */
+  runSystems(deltaTime: number): void {
+    for (let i = 0; i < this.systems.length; i++) {
+      this.systems[i]!.execute(deltaTime);
+    }
   }
 }
