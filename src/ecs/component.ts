@@ -30,6 +30,9 @@ export interface ComponentMeta<T extends object> {
 export type Component<T extends object = any> = ComponentMeta<T> & {
   /** Type marker for TypeScript inference */
   __type?: T;
+
+  /** Internal: Index assigned by World when registered */
+  __worldIndex?: number;
 };
 
 /**

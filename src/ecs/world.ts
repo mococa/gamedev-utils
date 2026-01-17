@@ -75,9 +75,7 @@ export class World extends WorldSystems {
   private componentMasks0!: Uint32Array; // Fast path: cached reference to first word (most common case)
   private numMaskWords: number = 0; // Number of allocated mask words
 
-  // Component registry (Map only for initial lookup)
-  /** @internal - Exposed for EntityHandle performance optimization */
-  readonly componentMap: Record<string, number> = {};
+  // Component registry (direct index stored on component - zero lookup cost!)
   private components: Component<any>[] = [];
 
   // Query result cache (reusable buffers for zero allocations)
@@ -128,7 +126,8 @@ export class World extends WorldSystems {
     // Register components
     config.components.forEach((component, index) => {
       this.components.push(component);
-      this.componentMap[component.name] = index;
+      // Store index directly on component for O(1) access (no Map lookup!)
+      component.__worldIndex = index;
 
       // Create component store with selected backend
       const store = new ComponentStore(component, this.maxEntities);
@@ -137,10 +136,10 @@ export class World extends WorldSystems {
   }
 
   /**
-   * Get component index (with caching via Map)
+   * Get component index (O(1) - stored directly on component)
    */
   private getComponentIndex(component: Component<any>): number {
-    const index = this.componentMap[component.name];
+    const index = component.__worldIndex;
     if (index === undefined) {
       const registered = this.components.map((c) => c.name).join(", ");
       throw new Error(
@@ -252,7 +251,7 @@ export class World extends WorldSystems {
     const indices: number[] = [];
 
     for (const component of components) {
-      const index = this.componentMap[component.name];
+      const index = component.__worldIndex;
       if (index === undefined) return null; // Invalid mask sentinel
       indices.push(index);
       if (index > maxIndex) maxIndex = index;
@@ -262,7 +261,7 @@ export class World extends WorldSystems {
     const numWords = Math.floor(maxIndex / 32) + 1;
     const requiredMask: number[] = new Array(numWords).fill(0);
 
-    // Set bits for each component (use cached indices to avoid Map lookups)
+    // Set bits for each component (direct index access - no lookups!)
     for (const index of indices) {
       const wordIndex = index >>> 5; // div 32
       const bitIndex = index & 31; // mod 32
@@ -476,7 +475,7 @@ export class World extends WorldSystems {
    * Remove a component from an entity.
    */
   remove<T extends object>(entity: Entity, component: Component<T>): void {
-    const index = this.componentMap[component.name];
+    const index = component.__worldIndex;
     if (index === undefined) return;
 
     this.clearComponentBit(entity, index);
@@ -494,7 +493,7 @@ export class World extends WorldSystems {
    * Check if an entity has a component.
    */
   has<T extends object>(entity: Entity, component: Component<T>): boolean {
-    const index = this.componentMap[component.name];
+    const index = component.__worldIndex;
     if (index === undefined) return false;
 
     return this.hasComponentBit(entity, index);
@@ -716,7 +715,7 @@ export class World extends WorldSystems {
     const componentArrays: any[] = [];
 
     for (const component of components) {
-      const index = this.componentMap[component.name];
+      const index = component.__worldIndex;
       if (index === undefined) continue;
 
       const store = this.componentStoresArray[index];
