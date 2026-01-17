@@ -358,7 +358,7 @@ function main() {
   console.log("bitECS Benchmark - Complex Game Simulation (11 Systems)\n");
   console.log("Running 5 iterations per entity count for averaging...\n");
 
-  const entityCounts = [500, 1000, 5000, 10000, 25000, 50000];
+  const entityCounts = [500, 1_000, 5_000, 10_000, 15_000, 25_000, 50_000, 100_000];
 
   console.log("| Entity Count | Avg Time | FPS | Min | Max |");
   console.log("|--------------|----------|-----|-----|-----|");

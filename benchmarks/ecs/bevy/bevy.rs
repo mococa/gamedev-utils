@@ -358,7 +358,7 @@ fn main() {
     println!("Bevy ECS Benchmark - Complex Game Simulation (11 Systems)\n");
     println!("Running 5 iterations per entity count for averaging...\n");
 
-    let entity_counts = [500, 1000, 5000, 10000, 25000, 50000];
+    let entity_counts = [500, 1_000, 5_000, 10_000, 15_000, 25_000, 50_000, 100_000];
 
     println!("| Entity Count | Avg Time | FPS | Min | Max |");
     println!("|--------------|----------|-----|-----|-----|");
