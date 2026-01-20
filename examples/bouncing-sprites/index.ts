@@ -154,7 +154,7 @@ class Game {
     // Setup ECS world
     this.world = new World({
       maxEntities: AMOUNT_OF_ENTITIES + 100, // Extra buffer for despawned entities
-      components: [Components.Transform, Components.Velocity, Components.Sprite],
+      components: Object.values(Components),
     });
 
     // Setup Pixi renderer
