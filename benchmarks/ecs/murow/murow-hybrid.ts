@@ -114,15 +114,12 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
       { transform: ['rotation'] },
       { velocity: ['vx', 'vy'] }
     ])
+    .when((entity) => entity.velocity_vx_array[entity.eid]! !== 0 || entity.velocity_vy_array[entity.eid]! !== 0)
     .run((entity, _deltaTime) => {
       entity.transform_rotation_array[entity.eid]! += Math.atan2(
         entity.velocity_vy_array[entity.eid]!,
         entity.velocity_vx_array[entity.eid]!
-      ) * 0.01;
-
-      if (entity.transform_rotation_array[entity.eid]! > Math.PI) {
-        entity.transform_rotation_array[entity.eid]! -= Math.PI * 2;
-      }
+      );
     });
 
   world
@@ -131,11 +128,17 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { transform: ['x', 'y'] }
     ])
+    .when((entity) =>
+      entity.transform_x_array[entity.eid]! < 0 ||
+      entity.transform_x_array[entity.eid]! > 1000 ||
+      entity.transform_y_array[entity.eid]! < 0 ||
+      entity.transform_y_array[entity.eid]! > 1000
+    )
     .run((entity, _deltaTime) => {
-      // oscillate between 0 and 1000
-
-      entity.transform_x_array[entity.eid] = (entity.transform_x_array[entity.eid]! + 1000) % 1000;
-      entity.transform_y_array[entity.eid] = (entity.transform_y_array[entity.eid]! + 1000) % 1000;
+      if (entity.transform_x_array[entity.eid]! < 0) entity.transform_x_array[entity.eid] = 1000;
+      if (entity.transform_x_array[entity.eid]! > 1000) entity.transform_x_array[entity.eid] = 0;
+      if (entity.transform_y_array[entity.eid]! < 0) entity.transform_y_array[entity.eid] = 1000;
+      if (entity.transform_y_array[entity.eid]! > 1000) entity.transform_y_array[entity.eid] = 0;
     });
 
   world
@@ -144,11 +147,9 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { cooldown: ['current'] }
     ])
+    .when((entity) => entity.cooldown_current_array[entity.eid]! > 0)
     .run((entity, deltaTime) => {
-      const current = entity.cooldown_current_array[entity.eid]!;
-      if (current <= 0) return;
-
-      const newCooldown = current - deltaTime;
+      const newCooldown = entity.cooldown_current_array[entity.eid]! - deltaTime;
       entity.cooldown_current_array[entity.eid]! = newCooldown < 0 ? 0 : newCooldown;
     });
 
@@ -159,18 +160,16 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
       { status: ['stunned', 'slowed'] },
       { velocity: ['vx', 'vy'] }
     ])
+    .when((entity) => entity.status_stunned_array[entity.eid]! === 1 || entity.status_slowed_array[entity.eid]! === 1)
     .run((entity, _deltaTime) => {
-      const stunned = entity.status_stunned_array[entity.eid]!;
-      const slowed = entity.status_slowed_array[entity.eid]!;
-      const vx = entity.velocity_vx_array;;
+      const vx = entity.velocity_vx_array;
       const vy = entity.velocity_vy_array;
-      if (stunned === 1) {
-        vx[entity.eid] = 0;
-        vy[entity.eid] = 0;
-      } else if (slowed === 1) {
-        vx[entity.eid]! *= 0.5;
-        vy[entity.eid]! *= 0.5;
-      }
+
+      vx[entity.eid] = entity.status_stunned_array[entity.eid]! ? 0 : vx[entity.eid]!;
+      vy[entity.eid] = entity.status_stunned_array[entity.eid]! ? 0 : vy[entity.eid]!;
+
+      vx[entity.eid]! *= entity.status_slowed_array[entity.eid]! ? 0.5 : 1;
+      vy[entity.eid]! *= entity.status_slowed_array[entity.eid]! ? 0.5 : 1;
     });
 
   world
@@ -191,13 +190,12 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { health: ['current', 'max'] }
     ])
+    .when((entity) => entity.health_current_array[entity.eid]! > 0 && entity.health_current_array[entity.eid]! < entity.health_max_array[entity.eid]!)
     .run((entity, _deltaTime) => {
       const current = entity.health_current_array[entity.eid]!;
       const maxVal = entity.health_max_array[entity.eid]!;
-      if (current > 0 && current < maxVal) {
-        const newHealth = current + 5;
-        entity.health_current_array[entity.eid]! = newHealth > maxVal ? maxVal : newHealth;
-      }
+      const newHealth = current + 5;
+      entity.health_current_array[entity.eid]! = newHealth > maxVal ? maxVal : newHealth;
     });
 
   const deathSystem = world
@@ -206,10 +204,8 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { health: ['current'] }
     ])
+    .when((entity) => entity.health_current_array[entity.eid]! === 0)
     .run((entity, _deltaTime, world) => {
-      const current = entity.health_current_array[entity.eid]!;
-      if (current > 0) return;
-
       world.despawn(entity.eid);
     });
 
@@ -219,14 +215,21 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { lifetime: ['remaining'] }
     ])
-    .run((entity, deltaTime, world) => {
+    .when((entity) => entity.lifetime_remaining_array[entity.eid]! > 0)
+    .run((entity, deltaTime) => {
       const remaining = entity.lifetime_remaining_array[entity.eid]! - deltaTime;
-      if (remaining <= 0) {
-        world.despawn(entity.eid);
-        return;
-      }
-
       entity.lifetime_remaining_array[entity.eid]! = remaining;
+    });
+
+  const lifetimeExpireSystem = world
+    .addSystem()
+    .query(Lifetime)
+    .fields([
+      { lifetime: ['remaining'] }
+    ])
+    .when((entity) => entity.lifetime_remaining_array[entity.eid]! <= 0)
+    .run((entity, _deltaTime, world) => {
+      world.despawn(entity.eid);
     });
 
   const aiSystem = world
@@ -357,6 +360,7 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
 
     // Lifetime system - despawn expired entities
     lifetimeSystem.execute(deltaTime);
+    lifetimeExpireSystem.execute(deltaTime);
 
     // AI behavior system every 20 frames
     if (frame % 20 === 0) {

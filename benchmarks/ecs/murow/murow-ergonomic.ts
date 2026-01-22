@@ -114,12 +114,12 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
       { transform: ['rotation'] },
       { velocity: ['vx', 'vy'] }
     ])
+    .when((entity) => entity.velocity_vx !== 0 || entity.velocity_vy !== 0)
     .run((entity, _deltaTime) => {
-      const vx = entity.velocity_vx;
-      const vy = entity.velocity_vy;
-      if (vx !== 0 || vy !== 0) {
-        entity.transform_rotation = Math.atan2(vy, vx);
-      }
+      entity.transform_rotation = Math.atan2(
+        entity.velocity_vy,
+        entity.velocity_vx,
+      );
     });
 
   world
@@ -128,6 +128,12 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { transform: ['x', 'y'] }
     ])
+    .when((entity) =>
+      entity.transform_x < 0 ||
+      entity.transform_x > 1000 ||
+      entity.transform_y < 0 ||
+      entity.transform_y > 1000
+    )
     .run((entity, _deltaTime) => {
       if (entity.transform_x < 0) entity.transform_x = 1000;
       if (entity.transform_x > 1000) entity.transform_x = 0;
@@ -141,11 +147,10 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { cooldown: ['current'] }
     ])
+    .when((entity) => entity.cooldown_current > 0)
     .run((entity, deltaTime) => {
-      if (entity.cooldown_current > 0) {
-        const newCooldown = entity.cooldown_current - deltaTime;
-        entity.cooldown_current = newCooldown < 0 ? 0 : newCooldown;
-      }
+      const newCooldown = entity.cooldown_current - deltaTime;
+      entity.cooldown_current = newCooldown < 0 ? 0 : newCooldown;
     });
 
   world
@@ -155,17 +160,13 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
       { status: ['stunned', 'slowed'] },
       { velocity: ['vx', 'vy'] }
     ])
+    .when((entity) => entity.status_stunned === 1 || entity.status_slowed === 1)
     .run((entity, _deltaTime) => {
-      const stunned = entity.status_stunned;
-      const slowed = entity.status_slowed;
+      entity.velocity_vx = entity.status_stunned ? 0 : entity.velocity_vx;
+      entity.velocity_vy = entity.status_stunned ? 0 : entity.velocity_vy;
 
-      if (stunned === 1) {
-        entity.velocity_vx = 0;
-        entity.velocity_vy = 0;
-      } else if (slowed === 1) {
-        entity.velocity_vx *= 0.5;
-        entity.velocity_vy *= 0.5;
-      }
+      entity.velocity_vx *= entity.status_slowed ? 0.5 : 1;
+      entity.velocity_vy *= entity.status_slowed ? 0.5 : 1;
     });
 
   world
@@ -186,13 +187,12 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { health: ['current', 'max'] }
     ])
+    .when((entity) => entity.health_current > 0 && entity.health_current < entity.health_max)
     .run((entity, _deltaTime) => {
       const current = entity.health_current;
       const max = entity.health_max;
-      if (current > 0 && current < max) {
-        const newHealth = current + 5;
-        entity.health_current = newHealth > max ? max : newHealth;
-      }
+      const newHealth = current + 5;
+      entity.health_current = newHealth > max ? max : newHealth;
     });
 
   const deathSystem = world
@@ -201,10 +201,9 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { health: ['current'] }
     ])
+    .when((entity) => entity.health_current === 0)
     .run((entity, _deltaTime, world) => {
-      if (entity.health_current === 0) {
-        world.despawn(entity.eid);
-      }
+      world.despawn(entity.eid);
     });
 
   const lifetimeSystem = world
@@ -213,13 +212,21 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
     .fields([
       { lifetime: ['remaining'] }
     ])
+    .when((entity) => entity.lifetime_remaining > 0)
     .run((entity, deltaTime, world) => {
       const remaining = entity.lifetime_remaining - deltaTime;
-      if (remaining <= 0) {
-        world.despawn(entity.eid);
-      } else {
-        entity.lifetime_remaining = remaining;
-      }
+      entity.lifetime_remaining = remaining;
+    });
+
+  const lifetimeExpireSystem = world
+    .addSystem()
+    .query(Lifetime)
+    .fields([
+      { lifetime: ['remaining'] }
+    ])
+    .when((entity) => entity.lifetime_remaining <= 0)
+    .run((entity, _deltaTime, world) => {
+      world.despawn(entity.eid);
     });
 
   const aiSystem = world
@@ -242,25 +249,24 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
       { damage: ['amount'] },
       { target: ['entityId'] }
     ])
+    .when((entity) => entity.cooldown_current === 0 && world.isAlive(entity.target_entityId) && world.has(entity.target_entityId, Health))
     .run((entity, _deltaTime, world) => {
-      if (entity.cooldown_current === 0 && world.isAlive(entity.target_entityId) && world.has(entity.target_entityId, Health)) {
-        const targetId = entity.target_entityId;
-        const targetHealth = healthCurrent[targetId]!;
-        let damageDealt = entity.damage_amount;
+      const targetId = entity.target_entityId;
+      const targetHealth = healthCurrent[targetId]!;
+      let damageDealt = entity.damage_amount;
 
-        // Apply armor reduction
-        if (world.has(targetId, Armor)) {
-          const armor = armorValue[targetId]!;
-          const reduced = entity.damage_amount - armor * 0.1;
-          damageDealt = reduced < 1 ? 1 : Math.floor(reduced);
-        }
-
-        const newHealth = targetHealth > damageDealt ? targetHealth - damageDealt : 0;
-        healthCurrent[targetId] = newHealth;
-
-        // Reset cooldown
-        entity.cooldown_current = entity.cooldown_max;
+      // Apply armor reduction
+      if (world.has(targetId, Armor)) {
+        const armor = armorValue[targetId]!;
+        const reduced = entity.damage_amount - armor * 0.1;
+        damageDealt = reduced < 1 ? 1 : Math.floor(reduced);
       }
+
+      const newHealth = targetHealth > damageDealt ? targetHealth - damageDealt : 0;
+      healthCurrent[targetId] = newHealth;
+
+      // Reset cooldown
+      entity.cooldown_current = entity.cooldown_max;
     });
 
   // Setup entities
@@ -349,6 +355,7 @@ function runBenchmark(entityCount: number): { avg: number; min: number; max: num
 
     // Lifetime system - despawn expired entities
     lifetimeSystem.execute(deltaTime);
+    lifetimeExpireSystem.execute(deltaTime);
 
     // AI behavior system every 20 frames
     if (frame % 20 === 0) {
