@@ -182,8 +182,21 @@ export class World extends WorldSystems {
    * Clear all component bits for an entity
    */
   private clearAllComponentBits(entity: Entity): void {
-    for (let i = 0; i < this.numMaskWords; i++) {
-      this.componentMasks[i][entity] = 0;
+    // Fast paths for common cases (avoids loop overhead)
+    if (this.numMaskWords === 1) {
+      this.componentMasks0[entity] = 0;
+    } else if (this.numMaskWords === 2) {
+      this.componentMasks0[entity] = 0;
+      this.componentMasks[1][entity] = 0;
+    } else if (this.numMaskWords === 3) {
+      this.componentMasks0[entity] = 0;
+      this.componentMasks[1][entity] = 0;
+      this.componentMasks[2][entity] = 0;
+    } else {
+      // General case for 4+ words
+      for (let i = 0; i < this.numMaskWords; i++) {
+        this.componentMasks[i][entity] = 0;
+      }
     }
   }
 
@@ -332,8 +345,56 @@ export class World extends WorldSystems {
           buffer[writeIdx++] = entity;
         }
       }
+    } else if (numWords === 2) {
+      // Unrolled for 2 words (32-63 components)
+      const mask0 = requiredMask[0];
+      const mask1 = requiredMask[1];
+      const masks0 = this.componentMasks0;
+      const masks1 = this.componentMasks[1];
+      for (let i = 0; i < length; i++) {
+        const entity = aliveEntities[i]!;
+        if ((masks0[entity] & mask0) === mask0 &&
+            (masks1[entity] & mask1) === mask1) {
+          buffer[writeIdx++] = entity;
+        }
+      }
+    } else if (numWords === 3) {
+      // Unrolled for 3 words (64-95 components)
+      const mask0 = requiredMask[0];
+      const mask1 = requiredMask[1];
+      const mask2 = requiredMask[2];
+      const masks0 = this.componentMasks0;
+      const masks1 = this.componentMasks[1];
+      const masks2 = this.componentMasks[2];
+      for (let i = 0; i < length; i++) {
+        const entity = aliveEntities[i]!;
+        if ((masks0[entity] & mask0) === mask0 &&
+            (masks1[entity] & mask1) === mask1 &&
+            (masks2[entity] & mask2) === mask2) {
+          buffer[writeIdx++] = entity;
+        }
+      }
+    } else if (numWords === 4) {
+      // Unrolled for 4 words (96-127 components)
+      const mask0 = requiredMask[0];
+      const mask1 = requiredMask[1];
+      const mask2 = requiredMask[2];
+      const mask3 = requiredMask[3];
+      const masks0 = this.componentMasks0;
+      const masks1 = this.componentMasks[1];
+      const masks2 = this.componentMasks[2];
+      const masks3 = this.componentMasks[3];
+      for (let i = 0; i < length; i++) {
+        const entity = aliveEntities[i]!;
+        if ((masks0[entity] & mask0) === mask0 &&
+            (masks1[entity] & mask1) === mask1 &&
+            (masks2[entity] & mask2) === mask2 &&
+            (masks3[entity] & mask3) === mask3) {
+          buffer[writeIdx++] = entity;
+        }
+      }
     } else {
-      // Multi-word mask path
+      // General case for 5+ words (rare)
       const componentMasks = this.componentMasks;
       outer: for (let i = 0; i < length; i++) {
         const entity = aliveEntities[i]!;
@@ -418,9 +479,11 @@ export class World extends WorldSystems {
     this.aliveEntitiesArray.pop();
 
     // Clear all components for this entity
-    for (let i = 0; i < this.components.length; i++) {
+    const stores = this.componentStoresArray;
+    const componentCount = this.components.length;
+    for (let i = 0; i < componentCount; i++) {
       if (this.hasComponentBit(entity, i)) {
-        this.componentStoresArray[i]!.clear(entity);
+        stores[i]!.clear(entity);
       }
     }
 
@@ -633,15 +696,28 @@ export class World extends WorldSystems {
     // Cache miss or stale - recompute query results
     const entities = this.aliveEntitiesArray;
     const length = entities.length;
+    const numWords = requiredMask.length;
 
     // Use write cursor pattern instead of buffer.length = 0 + push
     let writeIdx = 0;
 
-    // Process entities (checking 128-bit bitmask: 4 x 32-bit words)
-    for (let i = 0; i < length; i++) {
-      const entity = entities[i];
-      if (this.matchesComponentMask(entity, requiredMask)) {
-        buffer[writeIdx++] = entity;
+    // Inline fast path for single-word masks (avoids function call overhead)
+    if (numWords === 1) {
+      const mask0 = requiredMask[0];
+      const masks0 = this.componentMasks0;
+      for (let i = 0; i < length; i++) {
+        const entity = entities[i];
+        if ((masks0[entity] & mask0) === mask0) {
+          buffer[writeIdx++] = entity;
+        }
+      }
+    } else {
+      // Fall back to matchesComponentMask for multi-word
+      for (let i = 0; i < length; i++) {
+        const entity = entities[i];
+        if (this.matchesComponentMask(entity, requiredMask)) {
+          buffer[writeIdx++] = entity;
+        }
       }
     }
 
