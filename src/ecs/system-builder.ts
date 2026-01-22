@@ -12,11 +12,11 @@ type InferComponentData<C> = C extends Component<infer T> ? T : never;
  */
 type ExtractFieldMapping<T> = T extends Record<string, readonly any[]>
   ? {
-      [K in keyof T]: {
-        alias: K;
-        fields: T[K];
-      }
-    }[keyof T]
+    [K in keyof T]: {
+      alias: K;
+      fields: T[K];
+    }
+  }[keyof T]
   : never;
 
 /**
@@ -34,37 +34,38 @@ export type BuildEntityProxy<
   FieldMappings extends readonly any[]
 > = {
   eid: number;
+  despawn: () => void;
 } & {
-  // Getter/setter properties (ergonomic API)
-  -readonly [Index in keyof FieldMappings as Index extends keyof Components
+    // Getter/setter properties (ergonomic API)
+    -readonly [Index in keyof FieldMappings as Index extends keyof Components
     ? Components[Index] extends Component<any>
-      ? ExtractFieldMapping<FieldMappings[Index]>["fields"] extends readonly (keyof InferComponentData<Components[Index]>)[]
-        ? ExtractFieldMapping<FieldMappings[Index]>["fields"][number] extends keyof InferComponentData<Components[Index]>
-          ? `${ExtractFieldMapping<FieldMappings[Index]>["alias"] & string}_${ExtractFieldMapping<FieldMappings[Index]>["fields"][number] & string}`
-          : never
-        : never
-      : never
+    ? ExtractFieldMapping<FieldMappings[Index]>["fields"] extends readonly (keyof InferComponentData<Components[Index]>)[]
+    ? ExtractFieldMapping<FieldMappings[Index]>["fields"][number] extends keyof InferComponentData<Components[Index]>
+    ? `${ExtractFieldMapping<FieldMappings[Index]>["alias"] & string}_${ExtractFieldMapping<FieldMappings[Index]>["fields"][number] & string}`
+    : never
+    : never
+    : never
     : never]: Index extends keyof Components
     ? Components[Index] extends Component<any>
-      ? ExtractFieldMapping<FieldMappings[Index]>["fields"] extends readonly (keyof InferComponentData<Components[Index]>)[]
-        ? ExtractFieldMapping<FieldMappings[Index]>["fields"][number] extends keyof InferComponentData<Components[Index]>
-          ? InferComponentData<Components[Index]>[ExtractFieldMapping<FieldMappings[Index]>["fields"][number]]
-          : never
-        : never
-      : never
+    ? ExtractFieldMapping<FieldMappings[Index]>["fields"] extends readonly (keyof InferComponentData<Components[Index]>)[]
+    ? ExtractFieldMapping<FieldMappings[Index]>["fields"][number] extends keyof InferComponentData<Components[Index]>
+    ? InferComponentData<Components[Index]>[ExtractFieldMapping<FieldMappings[Index]>["fields"][number]]
+    : never
+    : never
+    : never
     : never;
-} & {
-  // Direct array properties (hybrid API)
-  -readonly [Index in keyof FieldMappings as Index extends keyof Components
+  } & {
+    // Direct array properties (hybrid API)
+    -readonly [Index in keyof FieldMappings as Index extends keyof Components
     ? Components[Index] extends Component<any>
-      ? ExtractFieldMapping<FieldMappings[Index]>["fields"] extends readonly (keyof InferComponentData<Components[Index]>)[]
-        ? ExtractFieldMapping<FieldMappings[Index]>["fields"][number] extends keyof InferComponentData<Components[Index]>
-          ? `${ExtractFieldMapping<FieldMappings[Index]>["alias"] & string}_${ExtractFieldMapping<FieldMappings[Index]>["fields"][number] & string}_array`
-          : never
-        : never
-      : never
+    ? ExtractFieldMapping<FieldMappings[Index]>["fields"] extends readonly (keyof InferComponentData<Components[Index]>)[]
+    ? ExtractFieldMapping<FieldMappings[Index]>["fields"][number] extends keyof InferComponentData<Components[Index]>
+    ? `${ExtractFieldMapping<FieldMappings[Index]>["alias"] & string}_${ExtractFieldMapping<FieldMappings[Index]>["fields"][number] & string}_array`
+    : never
+    : never
+    : never
     : never]: Float32Array | Int32Array | Uint32Array | Uint16Array | Uint8Array;
-};
+  };
 
 /**
  * Builder for creating ergonomic systems with automatic field array caching.
@@ -109,8 +110,11 @@ export class SystemBuilder<
     private world: World,
     private components: C,
     private fieldMappings?: FM,
-    private userCallback?: (entity: any, deltaTime: number, world: World) => void
-  ) {}
+    private userCallback?: (entity: any, deltaTime: number, world: World) => void,
+    private conditionPredicate?: CB extends true
+      ? (entity: BuildEntityProxy<C, FM>) => boolean
+      : undefined
+  ) { }
 
   /**
    * Specify which components this system should query for.
@@ -118,7 +122,7 @@ export class SystemBuilder<
   query<NewC extends Component<any>[]>(
     ...components: NewC
   ): SystemBuilder<NewC, FM, CB> {
-    return new SystemBuilder(this.world, components, this.fieldMappings, this.userCallback);
+    return new SystemBuilder(this.world, components, this.fieldMappings, this.userCallback, this.conditionPredicate as any);
   }
 
   /**
@@ -127,13 +131,22 @@ export class SystemBuilder<
   fields<
     const NewFM extends {
       [K in keyof C]: C[K] extends Component<infer T>
-        ? Record<string, readonly (keyof T)[]>
-        : never
+      ? Record<string, readonly (keyof T)[]>
+      : never
     }
   >(
     fieldMappings: NewFM
   ): SystemBuilder<C, NewFM, CB> {
-    return new SystemBuilder(this.world, this.components, fieldMappings as any, this.userCallback);
+    return new SystemBuilder(this.world, this.components, fieldMappings as any, this.userCallback, this.conditionPredicate as any);
+  }
+
+  /**
+   * Specify a condition to filter entities before running the system callback.
+   * @param predicate - Condition to filter entities before running the system callback.
+   * @returns A new SystemBuilder instance with the specified condition.
+   */
+  when(predicate: (entity: BuildEntityProxy<C, FM>) => boolean): SystemBuilder<C, FM, true> {
+    return new SystemBuilder(this.world, this.components, this.fieldMappings, this.userCallback, predicate);
   }
 
   /**
@@ -148,7 +161,8 @@ export class SystemBuilder<
       this.world,
       this.components,
       this.fieldMappings,
-      callback as any
+      callback as any,
+      this.conditionPredicate,
     );
 
     return builder.buildAndRegister();
@@ -213,7 +227,8 @@ export class SystemBuilder<
       componentByAlias,
       aliases,
       queryMaskKey,
-      queryMask
+      queryMask,
+      this.conditionPredicate,
     );
 
     // Register with world
@@ -241,7 +256,8 @@ export class ExecutableSystem {
     private componentByAlias: Record<string, Component<any>>,
     private aliases: string[],
     private queryMaskKey: string,
-    private queryMask: number[]
+    private queryMask: number[],
+    private conditionPredicate?: (entity: any) => boolean,
   ) {
     // Create proxy entity once and reuse
     this.proxyEntity = this.createProxyEntity();
@@ -253,17 +269,29 @@ export class ExecutableSystem {
    * @param deltaTime - Time delta to pass to system callback
    */
   execute(deltaTime: number): void {
-    // Use precomputed mask key and mask to bypass getQueryMask() overhead
     const entities = (this.world as any)._queryByMaskKey(this.queryMaskKey, this.queryMask);
     const callback = this.userCallback;
     const world = this.world;
     const entity = this.proxyEntity;
-
-    // Execute callback for each entity
     const length = entities.length;
-    for (let i = 0; i < length; i++) {
-      entity.eid = entities[i]!;
-      callback(entity, deltaTime, world);
+
+    // Fast path: no predicate
+    if (!this.conditionPredicate) {
+      for (let i = 0; i < length; i++) {
+        entity.eid = entities[i]!;
+
+        callback(entity, deltaTime, world);
+      }
+    } else {
+      // Filtered path: with predicate
+      const predicate = this.conditionPredicate;
+      for (let i = 0; i < length; i++) {
+        entity.eid = entities[i]!;
+
+        if (predicate(entity)) {
+          callback(entity, deltaTime, world);
+        }
+      }
     }
   }
 
@@ -276,7 +304,7 @@ export class ExecutableSystem {
    * BUT ALSO provide getter/setter for convenience.
    */
   private createProxyEntity(): any {
-    const entity: any = { eid: 0 };
+    const entity: any = { eid: 0, despawn: () => this.world.despawn(entity.eid) };
 
     // Expose arrays directly AND provide getter/setter for ergonomics
     for (const alias of this.aliases) {
