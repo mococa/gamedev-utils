@@ -7,6 +7,14 @@ import { Entity, World } from "./world";
 type InferComponentData<C> = C extends Component<infer T> ? T : never;
 
 /**
+ * Field descriptor for specialized proxy creation.
+ */
+type FieldDesc = {
+  prop: string;
+  array: any;
+};
+
+/**
  * Extract the alias (key) and fields from a field mapping object.
  * { transform2d: ['x', 'y'] } => { alias: 'transform2d', fields: ['x', 'y'] }
  */
@@ -146,7 +154,54 @@ export class SystemBuilder<
    * @returns A new SystemBuilder instance with the specified condition.
    */
   when(predicate: (entity: BuildEntityProxy<C, FM>) => boolean): SystemBuilder<C, FM, true> {
-    return new SystemBuilder(this.world, this.components, this.fieldMappings, this.userCallback, predicate);
+    if (!this.fieldMappings) {
+      throw new Error('Must call .fields() before .when()');
+    }
+
+    // Extract all field arrays once (or reuse cached)
+    const fieldArrays: Record<string, any> = {};
+
+    for (let i = 0; i < this.components.length; i++) {
+      const component = this.components[i]!;
+      const mapping = this.fieldMappings[i];
+      if (!mapping) continue;
+
+      const alias = Object.keys(mapping)[0]!;
+      const fields = mapping[alias];
+
+      for (const fieldName of fields) {
+        const flattenedName = `${alias}_${fieldName}`;
+        const array = this.world.getFieldArray(component, fieldName);
+        fieldArrays[flattenedName] = array;
+      }
+    }
+
+    // Create reusable proxy (ZERO allocations per entity!)
+    const proxyEntity: any = { eid: 0 };
+
+    // Define getters + expose arrays (for...in instead of Object.entries)
+    for (const name in fieldArrays) {
+      const array = fieldArrays[name];
+
+      // Ergonomic getter/setter access
+      Object.defineProperty(proxyEntity, name, {
+        get() { return array[this.eid]; },
+        set(value: any) { array[this.eid] = value; },
+        enumerable: true,
+        configurable: false
+      });
+
+      // Hybrid direct array access
+      proxyEntity[`${name}_array`] = array;
+    }
+
+    // Seal proxy to lock shape (allows eid updates, prevents additions/deletions)
+    Object.seal(proxyEntity);
+
+    // Fast predicate: reuses proxy, updates eid (clean signature)
+    const userPredicate = predicate;  // Inline reference
+
+    return new SystemBuilder(this.world, this.components, this.fieldMappings, this.userCallback, userPredicate);
   }
 
   /**
@@ -212,20 +267,30 @@ export class SystemBuilder<
       }
     }
 
+    // Precompute flat field descriptor list (specialization contract)
+    const fieldDescs: FieldDesc[] = [];
+    for (const alias of aliases) {
+      const fields = fieldArrayCache[alias];
+      for (const fieldName in fields) {
+        fieldDescs.push({
+          prop: `${alias}_${fieldName}`,
+          array: fields[fieldName],
+        });
+      }
+    }
+
     // Precompute query mask and mask key for fast queries
     // This avoids rebuilding the cache key string every frame
     world.query(...components); // Initializes the cache
     const queryMaskKey = (world as any)._getQueryMaskKey(components);
     const queryMask = (world as any).getQueryMask(components);
 
-    // Create the executable system
+    // Create the executable system with specialized field descriptors
     const system = new ExecutableSystem(
       world,
       components,
       userCallback,
-      fieldArrayCache,
-      componentByAlias,
-      aliases,
+      fieldDescs,
       queryMaskKey,
       queryMask,
       this.conditionPredicate,
@@ -252,9 +317,7 @@ export class ExecutableSystem {
     private world: World,
     private components: Component<any>[],
     private userCallback: (entity: any, deltaTime: number, world: World) => void,
-    private fieldArrayCache: Record<string, Record<string, any>>,
-    private componentByAlias: Record<string, Component<any>>,
-    private aliases: string[],
+    private fieldDescs: FieldDesc[],
     private queryMaskKey: string,
     private queryMask: number[],
     private conditionPredicate?: (entity: any) => boolean,
@@ -298,32 +361,36 @@ export class ExecutableSystem {
   /**
    * Create proxy entity that exposes arrays directly.
    *
-   * Instead of entity.transform_x (getter/setter),
-   * use entity.transform_x_array[entity.eid] for direct access.
-   *
-   * BUT ALSO provide getter/setter for convenience.
+   * Each getter closes over a specific TypedArray.
    */
   private createProxyEntity(): any {
-    const entity: any = { eid: 0, despawn: () => this.world.despawn(entity.eid) };
+    const world = this.world;
 
-    // Expose arrays directly AND provide getter/setter for ergonomics
-    for (const alias of this.aliases) {
-      const fields = this.fieldArrayCache[alias];
-      for (const [fieldName, array] of Object.entries(fields!)) {
-        const flattenedName = `${alias}_${fieldName}`;
+    const entity = {
+      eid: 0,
+      despawn() {
+        world.despawn(this.eid);
+      },
+    };
 
-        // Direct array access (FAST - for power users)
-        entity[`${flattenedName}_array`] = array;
+    // static property list, static closures
+    for (let i = 0; i < this.fieldDescs.length; i++) {
+      const { prop, array } = this.fieldDescs[i]!;
 
-        // Getter/setter access (SLOW but ergonomic)
-        Object.defineProperty(entity, flattenedName, {
-          get() { return array[this.eid]; },
-          set(value: any) { array[this.eid] = value; },
-          enumerable: true,
-          configurable: false
-        });
-      }
+      // Hybrid direct array access
+      entity[`${prop}_array`] = array;
+
+      // Ergonomic getter/setter access
+      Object.defineProperty(entity, prop, {
+        get() { return array[this.eid]; },
+        set(value: any) { array[this.eid] = value; },
+        enumerable: true,
+        configurable: false,
+      });
     }
+
+    Object.seal(entity);
+    Object.preventExtensions(entity);
 
     return entity;
   }
