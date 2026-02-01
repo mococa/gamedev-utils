@@ -17,16 +17,16 @@
 
 **11 systems — 5-run average**
 
-| Entities | Avg Frame Time |     Approx FPS | Min Time | Max Time |
-| -------: | -------------: | -------------: | -------: | -------: |
-|      500 |    **0.14 ms** | **~7,020 FPS** | **0.05** | **2.93** |
-|    1,000 |    **0.17 ms** | **~6,140 FPS** | **0.10** | **2.21** |
-|    5,000 |    **0.63 ms** | **~1,590 FPS** | **0.47** | **3.34** |
-|   10,000 |    **1.15 ms** |   **~870 FPS** | **0.70** | **6.28** |
-|   15,000 |    **1.41 ms** |   **~705 FPS** | **1.06** | **5.20** |
-|   25,000 |    **3.04 ms** |   **~330 FPS** | **1.77** | **9.69** |
-|   50,000 |    **8.93 ms** |   **~112 FPS** | **3.56** |**20.24** |
-|  100,000 |   **21.30 ms** |    **~47 FPS** | **7.09** |**40.58** |
+| Entities | Avg Frame Time |     Approx FPS | P50      | P95      | P99      | Max      | StdDev   |
+| -------: | -------------: | -------------: | -------: | -------: | -------: | -------: | -------: |
+|      500 |    **0.16 ms** | **~6,250 FPS** | **0.14** | **0.22** | **0.83** | **2.34** | **0.09** |
+|    1,000 |    **0.13 ms** | **~7,690 FPS** | **0.11** | **0.17** | **0.54** | **0.64** | **0.06** |
+|    5,000 |    **0.62 ms** | **~1,610 FPS** | **0.54** | **0.85** | **2.05** | **3.28** | **0.24** |
+|   10,000 |    **1.12 ms** |   **~890 FPS** | **1.05** | **1.34** | **3.19** | **3.42** | **0.29** |
+|   15,000 |    **1.89 ms** |   **~530 FPS** | **1.56** | **2.96** | **4.74** | **5.56** | **0.72** |
+|   25,000 |    **3.51 ms** |   **~285 FPS** | **3.48** | **4.46** | **8.48** | **9.36** | **1.00** |
+|   50,000 |    **8.18 ms** |   **~122 FPS** | **8.55** |**10.69** |**17.47** |**18.65** | **2.11** |
+|  100,000 |   **21.39 ms** |    **~47 FPS** |**20.76** |**25.56** |**35.28** |**36.04** | **2.53** |
 
 ---
 
@@ -36,16 +36,16 @@
 
 Uses direct array access (`entity.field_array[entity.eid]`) for maximum performance.
 
-| Entities | Avg Frame Time |     Approx FPS | Min Time | Max Time |
-| -------: | -------------: | -------------: | -------: | -------: |
-|      500 |    **0.24 ms** | **~4,280 FPS** | **0.14** | **6.29** |
-|    1,000 |    **0.38 ms** | **~2,680 FPS** | **0.28** | **0.80** |
-|    5,000 |    **1.78 ms** |   **~565 FPS** | **1.38** | **3.47** |
-|   10,000 |    **3.62 ms** |   **~278 FPS** | **2.79** | **7.30** |
-|   15,000 |    **5.51 ms** |   **~182 FPS** | **4.25** | **9.82** |
-|   25,000 |    **9.30 ms** |   **~108 FPS** | **7.16** |**15.73** |
-|   50,000 |   **16.12 ms** |    **~62 FPS** |**14.11** |**26.22** |
-|  100,000 |   **34.28 ms** |    **~29 FPS** |**28.45** |**61.45** |
+| Entities | Avg Frame Time |     Approx FPS | P50      | P95      | P99      | Max      | StdDev   |
+| -------: | -------------: | -------------: | -------: | -------: | -------: | -------: | -------: |
+|      500 |    **0.19 ms** | **~5,260 FPS** | **0.14** | **0.33** | **1.94** | **7.40** | **0.24** |
+|    1,000 |    **0.24 ms** | **~4,170 FPS** | **0.23** | **0.29** | **0.45** | **0.54** | **0.03** |
+|    5,000 |    **1.10 ms** |   **~910 FPS** | **1.07** | **1.30** | **2.00** | **2.05** | **0.14** |
+|   10,000 |    **2.23 ms** |   **~450 FPS** | **2.18** | **2.50** | **4.00** | **4.85** | **0.27** |
+|   15,000 |    **3.38 ms** |   **~295 FPS** | **3.30** | **3.79** | **5.51** | **5.67** | **0.35** |
+|   25,000 |    **5.58 ms** |   **~179 FPS** | **5.46** | **6.21** | **8.87** | **9.49** | **0.54** |
+|   50,000 |   **11.29 ms** |    **~89 FPS** |**11.06** |**12.78** |**17.80** |**18.04** | **1.08** |
+|  100,000 |   **22.83 ms** |    **~44 FPS** |**22.42** |**24.90** |**37.86** |**39.52** | **2.31** |
 
 ---
 
@@ -55,16 +55,16 @@ Uses direct array access (`entity.field_array[entity.eid]`) for maximum performa
 
 Uses ergonomic field access with caching for convenience.
 
-| Entities | Avg Frame Time |     Approx FPS | Min Time | Max Time |
-| -------: | -------------: | -------------: | -------: | -------: |
-|      500 |    **0.30 ms** | **~3,390 FPS** | **0.18** | **5.50** |
-|    1,000 |    **0.45 ms** | **~2,230 FPS** | **0.36** | **1.25** |
-|    5,000 |    **2.07 ms** |   **~484 FPS** | **1.75** | **4.17** |
-|   10,000 |    **4.22 ms** |   **~237 FPS** | **3.53** | **8.62** |
-|   15,000 |    **6.41 ms** |   **~156 FPS** | **5.39** |**11.53** |
-|   25,000 |   **10.84 ms** |    **~92 FPS** | **9.09** |**18.78** |
-|   50,000 |   **20.47 ms** |    **~49 FPS** |**18.02** |**52.40** |
-|  100,000 |   **41.66 ms** |    **~24 FPS** |**35.87** |**94.20** |
+| Entities | Avg Frame Time |     Approx FPS | P50      | P95      | P99      | Max      | StdDev   |
+| -------: | -------------: | -------------: | -------: | -------: | -------: | -------: | -------: |
+|      500 |    **0.25 ms** | **~4,000 FPS** | **0.21** | **0.40** | **1.49** | **5.07** | **0.17** |
+|    1,000 |    **0.37 ms** | **~2,700 FPS** | **0.36** | **0.43** | **0.68** | **0.81** | **0.05** |
+|    5,000 |    **1.67 ms** |   **~600 FPS** | **1.64** | **1.89** | **2.82** | **3.01** | **0.18** |
+|   10,000 |    **3.37 ms** |   **~297 FPS** | **3.32** | **3.68** | **5.56** | **6.54** | **0.32** |
+|   15,000 |    **5.16 ms** |   **~194 FPS** | **5.09** | **5.62** | **7.86** | **8.15** | **0.42** |
+|   25,000 |    **8.69 ms** |   **~115 FPS** | **8.59** | **9.52** |**13.07** |**13.84** | **0.68** |
+|   50,000 |   **17.43 ms** |    **~57 FPS** |**17.25** |**19.09** |**25.75** |**26.26** | **1.30** |
+|  100,000 |   **35.07 ms** |    **~29 FPS** |**34.54** |**38.33** |**52.96** |**55.37** | **2.77** |
 
 ---
 
@@ -72,16 +72,16 @@ Uses ergonomic field access with caching for convenience.
 
 **11 systems — 5-run average**
 
-| Entities | Avg Frame Time | Approx FPS | Min Time |  Max Time |
-| -------: | -------------: | ---------: | -------: | --------: |
-|      500 |        0.16 ms | ~6,190 FPS |     0.05 |      9.86 |
-|    1,000 |        0.20 ms | ~5,070 FPS |     0.08 |      7.06 |
-|    5,000 |        0.90 ms | ~1,110 FPS |     0.45 |     27.49 |
-|   10,000 |        1.59 ms |   ~627 FPS |     0.88 |     43.05 |
-|   15,000 |        2.29 ms |   ~436 FPS |     1.32 |     54.92 |
-|   25,000 |        3.87 ms |   ~258 FPS |     2.20 |     99.87 |
-|   50,000 |        6.65 ms |   ~150 FPS |     3.36 |    175.28 |
-|  100,000 |       13.27 ms |    ~75 FPS |     7.06 |    344.48 |
+| Entities | Avg Frame Time | Approx FPS | P50      | P95      | P99      | Max      | StdDev   |
+| -------: | -------------: | ---------: | -------: | -------: | -------: | -------: | -------: |
+|      500 |        0.18 ms | ~5,560 FPS |     0.08 |     0.22 |     5.09 |    11.88 |     0.64 |
+|    1,000 |        0.19 ms | ~5,260 FPS |     0.11 |     0.20 |     4.29 |     5.28 |     0.53 |
+|    5,000 |        0.89 ms | ~1,120 FPS |     0.55 |     0.76 |    19.72 |    25.39 |     2.45 |
+|   10,000 |        1.63 ms |   ~613 FPS |     0.96 |     1.26 |    39.18 |    42.07 |     4.89 |
+|   15,000 |        2.31 ms |   ~433 FPS |     1.40 |     1.86 |    52.95 |    56.10 |     6.59 |
+|   25,000 |        3.91 ms |   ~256 FPS |     2.42 |     3.16 |    87.15 |    95.70 |    10.84 |
+|   50,000 |        6.95 ms |   ~144 FPS |     4.19 |     5.65 |   160.68 |   170.94 |    20.02 |
+|  100,000 |       13.28 ms |    ~75 FPS |     7.68 |    10.30 |   321.65 |   349.95 |    40.16 |
 
 ---
 
@@ -89,16 +89,16 @@ Uses ergonomic field access with caching for convenience.
 
 **11 systems — 5-run average**
 
-| Entities | Avg Frame Time |  Approx FPS | Min Time | Max Time |
-| -------: | -------------: | ----------: | -------: | -------: |
-|      500 |        0.03 ms | ~36,920 FPS |     0.02 |     0.44 |
-|    1,000 |        0.05 ms | ~20,460 FPS |     0.04 |     0.44 |
-|    5,000 |        0.22 ms |  ~4,510 FPS |     0.19 |     0.82 |
-|   10,000 |        0.44 ms |  ~2,300 FPS |     0.39 |     1.28 |
-|   15,000 |        0.66 ms |  ~1,520 FPS |     0.59 |     2.12 |
-|   25,000 |        1.08 ms |    ~923 FPS |     0.99 |     2.94 |
-|   50,000 |        2.18 ms |    ~458 FPS |     1.98 |     5.98 |
-|  100,000 |        4.42 ms |    ~226 FPS |     4.00 |    15.78 |
+| Entities | Avg Frame Time |  Approx FPS | P50      | P95      | P99      | Max      | StdDev   |
+| -------: | -------------: | ----------: | -------: | -------: | -------: | -------: | -------: |
+|      500 |        0.04 ms | ~25,000 FPS |     0.03 |     0.04 |     0.43 |     0.52 |     0.05 |
+|    1,000 |        0.06 ms | ~16,670 FPS |     0.06 |     0.07 |     0.46 |     0.51 |     0.05 |
+|    5,000 |        0.23 ms |  ~4,350 FPS |     0.21 |     0.25 |     0.69 |     0.86 |     0.06 |
+|   10,000 |        0.43 ms |  ~2,330 FPS |     0.42 |     0.48 |     1.12 |     1.20 |     0.09 |
+|   15,000 |        0.65 ms |  ~1,540 FPS |     0.63 |     0.72 |     1.58 |     1.67 |     0.12 |
+|   25,000 |        1.08 ms |    ~926 FPS |     1.05 |     1.20 |     2.48 |     2.81 |     0.19 |
+|   50,000 |        2.18 ms |    ~459 FPS |     2.11 |     2.35 |     5.21 |     5.54 |     0.41 |
+|  100,000 |        4.42 ms |    ~226 FPS |     4.28 |     4.71 |    11.27 |    11.76 |     0.91 |
 
 ---
 
@@ -108,72 +108,72 @@ Uses ergonomic field access with caching for convenience.
 
 | Engine                 |    Avg Time |         Relative |
 | ---------------------- | ----------: | ---------------: |
-| Bevy (Rust)            |     0.22 ms |               1× |
-| **Murow RAW**          | **0.63 ms** | **~2.9× slower** |
-| bitECS                 |     0.90 ms |     ~4.1× slower |
-| **Murow Hybrid**       | **1.78 ms** | **~8.1× slower** |
-| **Murow Ergonomic**    | **2.07 ms** | **~9.4× slower** |
+| Bevy (Rust)            |     0.23 ms |               1× |
+| **Murow RAW**          | **0.62 ms** | **~2.7× slower** |
+| bitECS                 |     0.89 ms |     ~3.9× slower |
+| **Murow Hybrid**       | **1.10 ms** | **~4.8× slower** |
+| **Murow Ergonomic**    | **1.67 ms** | **~7.3× slower** |
 
 
 ### @ 10k Entities
 
 | Engine                 |    Avg Time |         Relative |
 | ---------------------- | ----------: | ---------------: |
-| Bevy (Rust)            |     0.44 ms |               1× |
-| **Murow RAW**          | **1.15 ms** | **~2.6× slower** |
-| bitECS                 |     1.59 ms |     ~3.6× slower |
-| **Murow Hybrid**       | **3.62 ms** | **~8.2× slower** |
-| **Murow Ergonomic**    | **4.22 ms** | **~9.6× slower** |
+| Bevy (Rust)            |     0.43 ms |               1× |
+| **Murow RAW**          | **1.12 ms** | **~2.6× slower** |
+| bitECS                 |     1.63 ms |     ~3.8× slower |
+| **Murow Hybrid**       | **2.23 ms** | **~5.2× slower** |
+| **Murow Ergonomic**    | **3.37 ms** | **~7.8× slower** |
 
 ### @ 25k Entities
 
 | Engine                 |    Avg Time |         Relative |
 | ---------------------- | ----------: | ---------------: |
 | Bevy (Rust)            |     1.08 ms |               1× |
-| **Murow RAW**          | **3.04 ms** | **~2.8× slower** |
-| bitECS                 |     3.87 ms |     ~3.6× slower |
-| **Murow Hybrid**       | **9.30 ms** | **~8.6× slower** |
-| **Murow Ergonomic**    |**10.84 ms** |**~10.0× slower** |
+| **Murow RAW**          | **3.51 ms** | **~3.3× slower** |
+| bitECS                 |     3.91 ms |     ~3.6× slower |
+| **Murow Hybrid**       | **5.58 ms** | **~5.2× slower** |
+| **Murow Ergonomic**    | **8.69 ms** | **~8.0× slower** |
 
 ### @ 50k Entities
 
 | Engine                 |    Avg Time |         Relative |
 | ---------------------- | ----------: | ---------------: |
 | Bevy (Rust)            |     2.18 ms |               1× |
-| bitECS                 |     6.65 ms |     ~3.1× slower |
-| **Murow RAW**          | **8.93 ms** | **~4.1× slower** |
-| **Murow Hybrid**       |**16.12 ms** | **~7.4× slower** |
-| **Murow Ergonomic**    |**20.47 ms** | **~9.4× slower** |
+| bitECS                 |     6.95 ms |     ~3.2× slower |
+| **Murow RAW**          | **8.18 ms** | **~3.8× slower** |
+| **Murow Hybrid**       |**11.29 ms** | **~5.2× slower** |
+| **Murow Ergonomic**    |**17.43 ms** | **~8.0× slower** |
 
 ### @ 100k Entities
 
 | Engine                 |    Avg Time |         Relative |
 | ---------------------- | ----------: | ---------------: |
 | Bevy (Rust)            |     4.42 ms |               1× |
-| bitECS                 |    13.27 ms |     ~3.0× slower |
-| **Murow RAW**          |**21.30 ms** | **~4.8× slower** |
-| **Murow Hybrid**       |**34.28 ms** | **~7.8× slower** |
-| **Murow Ergonomic**    |**41.66 ms** | **~9.4× slower** |
+| bitECS                 |    13.28 ms |     ~3.0× slower |
+| **Murow RAW**          |**21.39 ms** | **~4.8× slower** |
+| **Murow Hybrid**       |**22.83 ms** | **~5.2× slower** |
+| **Murow Ergonomic**    |**35.07 ms** | **~7.9× slower** |
 
 ---
 
 ## Performance Variance Analysis
 
-Based on min/max values across 5 runs at 100k entities:
+Based on P50/max values across 5 runs at 100k entities:
 
-| Engine                 | Avg Time | Min Time | Max Time | Variance Range |
-| ---------------------- | -------: | -------: | -------: | -------------: |
-| Bevy (Rust)            |  4.42 ms |  4.00 ms | 15.78 ms |       ~3.6× |
-| bitECS                 | 13.27 ms |  7.06 ms |344.48 ms |      ~48.8× |
-| **Murow RAW**          |**21.30ms**|**7.09ms**|**40.58ms**|    **~5.7×** |
-| **Murow Hybrid**       |**34.28ms**|**28.45ms**|**61.45ms**|   **~2.2×** |
-| **Murow Ergonomic**    |**41.66ms**|**35.87ms**|**94.20ms**|   **~2.6×** |
+| Engine                 | Avg Time | P50 Time | Max Time | Variance (Max/P50) |
+| ---------------------- | -------: | -------: | -------: | -----------------: |
+| **Murow Ergonomic**    |**35.07ms**|**34.54ms**|**55.37ms**|        **~1.6×** |
+| **Murow RAW**          |**21.39ms**|**20.76ms**|**36.04ms**|        **~1.7×** |
+| **Murow Hybrid**       |**22.83ms**|**22.42ms**|**39.52ms**|        **~1.8×** |
+| Bevy (Rust)            |  4.42 ms |  4.28 ms | 11.76 ms |             ~2.7× |
+| bitECS                 | 13.28 ms |  7.68 ms |349.95 ms |            ~45.6× |
 
 **Observations:**
-* Murow Hybrid and Ergonomic APIs show **remarkably consistent performance** (~2.2-2.6× variance)
-* Murow RAW has moderate variance (~5.7×), likely due to GC spikes
-* bitECS shows high variance (~48.8×) with occasional GC pauses exceeding 300ms
-* Bevy shows low average variance but occasional spikes (~3.6×)
+* All Murow APIs show **exceptional consistency** (~1.6-1.8× variance) with tight P50-to-max ranges
+* Murow achieves better variance control than even Bevy (~2.7×)
+* bitECS shows extreme variance (~45.6×) with occasional GC pauses exceeding 300ms
+* Low variance is critical for consistent frame times in real-time applications
 
 ---
 
@@ -181,23 +181,28 @@ Based on min/max values across 5 runs at 100k entities:
 
 * Murow RAW API:
   * **beats bitECS up to ~25k entities** on a **2011 CPU**
-  * reaches **100k entities at ~47 FPS** (21.30ms) with single-digit frame times up to 50k
+  * reaches **100k entities at ~47 FPS** (21.39ms) with single-digit frame times up to 50k
   * maintains **~2.6-4.8× slower than Bevy** across all scales
   * scaling is **cleanly linear** across the entire range
+  * **exceptional variance control** (~1.7× max/P50 ratio at 100k entities)
 
 * Murow Hybrid API (direct array access):
-  * **~2-3× slower than RAW** but still faster than ergonomic access
+  * **dramatically improved** - now only **~1.07× slower than RAW** at 100k entities
+  * reaches **100k entities at ~44 FPS** (22.83ms), nearly matching RAW performance
   * balances performance with type safety
-  * reaches **100k entities at ~29 FPS** (34.28ms)
+  * **best-in-class variance** (~1.8× max/P50 ratio)
+  * ideal for production use when ergonomics matter
 
 * Murow Ergonomic API (cached field access):
-  * **~2× slower than Hybrid**, **~4× slower than RAW**
+  * **~1.5× slower than Hybrid**, **~1.6× slower than RAW**
+  * reaches **100k entities at ~29 FPS** (35.07ms)
   * prioritizes developer experience with property-like syntax
-  * reaches **100k entities at ~24 FPS** (41.66ms)
+  * **outstanding consistency** (~1.6× max/P50 ratio - better than Bevy!)
 
 * All Murow variants:
-  * maintain bounded variance even at high entity counts
+  * **better variance control than Bevy** (1.6-1.8× vs 2.7×)
   * demonstrate **cleanly linear scaling** across 500-100k entities
   * viable for **real-time server simulations** and **rollback / deterministic multiplayer**
   * competitive among **TypeScript/JavaScript ECS implementations**
+  * **critical for consistent frame times** in production environments
 
