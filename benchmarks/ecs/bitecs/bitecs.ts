@@ -112,7 +112,7 @@ function boundarySystem(world: World): void {
 }
 
 function healthRegenSystem(world: World, frame: number): void {
-  // if (frame % 30 === 0) {
+  if (frame % 30 === 0) {
     const entities = query(world, [Health]);
     for (let i = 0; i < entities.length; i++) {
       const eid = entities[i]!;
@@ -124,7 +124,7 @@ function healthRegenSystem(world: World, frame: number): void {
         Health.current[eid] = newHealth > max ? max : newHealth;
       }
     }
-  // }
+  }
 }
 
 function cooldownSystem(world: World, deltaTime: number): void {
@@ -142,7 +142,7 @@ function cooldownSystem(world: World, deltaTime: number): void {
 let activeEntities = new Set<number>();
 
 function combatSystem(world: World, frame: number): void {
-  // if (frame % 5 === 0) {
+  if (frame % 5 === 0) {
     const entities = query(world, [Cooldown, Damage, Target]);
     const updates: Array<{ targetId: number; newHealth: number; attackerId: number }> = [];
 
@@ -176,7 +176,7 @@ function combatSystem(world: World, frame: number): void {
       // Reset cooldown
       Cooldown.current[attackerId] = Cooldown.max[attackerId]!;
     }
-  // }
+  }
 }
 
 function deathSystem(world: World): void {
@@ -244,7 +244,7 @@ function velocityDampingSystem(world: World): void {
 }
 
 function aiBehaviorSystem(world: World, frame: number): void {
-  // if (frame % 20 === 0) {
+  if (frame % 20 === 0) {
     const rng = new SimpleRng(frame);
     const entities = query(world, [Velocity]);
 
@@ -255,7 +255,7 @@ function aiBehaviorSystem(world: World, frame: number): void {
         Velocity.vy[eid]! += (rng.nextF32() - 0.5) * 2;
       }
     }
-  // }
+  }
 }
 
 interface BenchmarkMetrics {

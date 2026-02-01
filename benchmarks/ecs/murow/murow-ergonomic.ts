@@ -108,6 +108,9 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
   const healthCurrent = world.getFieldArray(Health, 'current');
   const armorValue = world.getFieldArray(Armor, 'value');
 
+  // Track current frame for system throttling
+  let currentFrame = 0;
+
   // Register systems using ergonomic addSystem API with flattened property syntax
   // These run automatically with world.runSystems()
   // Note: We use flattened syntax (entity.transform_x) for best performance
@@ -203,7 +206,10 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
     .fields([
       { health: ['current', 'max'] }
     ])
-    .when((entity) => entity.health_current > 0 && entity.health_current < entity.health_max)
+    .when((entity) => {
+      if (currentFrame % 30 !== 0) return false;
+      return entity.health_current > 0 && entity.health_current < entity.health_max;
+    })
     .run((entity, _deltaTime) => {
       const current = entity.health_current;
       const max = entity.health_max;
@@ -251,9 +257,12 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
     .fields([
       { velocity: ['vx', 'vy'] }
     ])
+    .when(() => currentFrame % 20 === 0)
     .run((entity, _deltaTime) => {
-      entity.velocity_vx += (Math.random() - 0.5) * 2;
-      entity.velocity_vy += (Math.random() - 0.5) * 2;
+      if (Math.random() > 0.9) {
+        entity.velocity_vx += (Math.random() - 0.5) * 2;
+        entity.velocity_vy += (Math.random() - 0.5) * 2;
+      }
     });
 
   // Combat system - uses ergonomic API + closure over cached arrays for cross-entity reads
@@ -265,7 +274,10 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
       { damage: ['amount'] },
       { target: ['entityId'] }
     ])
-    .when((entity) => entity.cooldown_current === 0 && world.isAlive(entity.target_entityId) && world.has(entity.target_entityId, Health))
+    .when((entity) => {
+      if (currentFrame % 5 !== 0) return false;
+      return entity.cooldown_current === 0 && world.isAlive(entity.target_entityId) && world.has(entity.target_entityId, Health);
+    })
     .run((entity, _deltaTime, world) => {
       const targetId = entity.target_entityId;
       const targetHealth = healthCurrent[targetId]!;
@@ -351,18 +363,19 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
   const frameTimes: number[] = [];
 
   for (let frame = 0; frame < frameCount; frame++) {
+    currentFrame = frame;
     const frameStart = performance.now();
+
+    // Override Math.random with deterministic RNG for this frame
+    const rng = new SimpleRng(frame);
+    const originalRandom = Math.random;
+    Math.random = () => rng.nextF32();
 
     // Run all auto-registered systems
     world.runSystems(deltaTime);
 
-    // AI behavior system every 20 frames
-    if (frame % 20 === 0) {
-      const rng = new SimpleRng(frame);
-      const originalRandom = Math.random;
-      Math.random = () => rng.nextF32();
-      Math.random = originalRandom;
-    }
+    // Restore original Math.random
+    Math.random = originalRandom;
 
     const frameTime = performance.now() - frameStart;
     frameTimes.push(frameTime);

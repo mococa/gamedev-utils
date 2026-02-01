@@ -108,6 +108,9 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
   const healthCurrent = world.getFieldArray(Health, 'current');
   const armorValue = world.getFieldArray(Armor, 'value');
 
+  // Track current frame for system throttling
+  let currentFrame = 0;
+
   // Register systems using HYBRID API: system builder + direct array access
   // These run automatically with world.runSystems()
   // Note: We use entity.field_array[entity.eid] for RAW SPEED!
@@ -132,7 +135,7 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
     ])
     .when((entity) => entity.velocity_vx_array[entity.eid]! !== 0 || entity.velocity_vy_array[entity.eid]! !== 0)
     .run((entity, _deltaTime) => {
-      entity.transform_rotation_array[entity.eid]! += Math.atan2(
+      entity.transform_rotation_array[entity.eid]! = Math.atan2(
         entity.velocity_vy_array[entity.eid]!,
         entity.velocity_vx_array[entity.eid]!
       );
@@ -206,7 +209,10 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
     .fields([
       { health: ['current', 'max'] }
     ])
-    .when((entity) => entity.health_current_array[entity.eid]! > 0 && entity.health_current_array[entity.eid]! < entity.health_max_array[entity.eid]!)
+    .when((entity) => {
+      if (currentFrame % 30 !== 0) return false;
+      return entity.health_current_array[entity.eid]! > 0 && entity.health_current_array[entity.eid]! < entity.health_max_array[entity.eid]!;
+    })
     .run((entity, _deltaTime) => {
       const current = entity.health_current_array[entity.eid]!;
       const maxVal = entity.health_max_array[entity.eid]!;
@@ -254,9 +260,12 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
     .fields([
       { velocity: ['vx', 'vy'] }
     ])
+    .when(() => currentFrame % 20 === 0)
     .run((entity, _deltaTime) => {
-      entity.velocity_vx_array[entity.eid]! += (Math.random() - 0.5) * 2;
-      entity.velocity_vy_array[entity.eid]! += (Math.random() - 0.5) * 2;
+      if (Math.random() > 0.9) {
+        entity.velocity_vx_array[entity.eid]! += (Math.random() - 0.5) * 2;
+        entity.velocity_vy_array[entity.eid]! += (Math.random() - 0.5) * 2;
+      }
     });
 
   // Combat system - uses hybrid API + closure over cached arrays for cross-entity reads
@@ -268,7 +277,10 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
       { damage: ['amount'] },
       { target: ['entityId'] }
     ])
-    .when((entity) => entity.cooldown_current_array[entity.eid] === 0)
+    .when((entity) => {
+      if (currentFrame % 5 !== 0) return false;
+      return entity.cooldown_current_array[entity.eid] === 0;
+    })
     .run((entity, _deltaTime, world) => {
       const targetId = entity.target_entityId_array[entity.eid]!;
       if (!world.isAlive(targetId) || !world.has(targetId, Health)) return;
@@ -355,18 +367,19 @@ function runBenchmark(entityCount: number): BenchmarkMetrics {
   const frameTimes: number[] = [];
 
   for (let frame = 0; frame < frameCount; frame++) {
+    currentFrame = frame;
     const frameStart = performance.now();
+
+    // Override Math.random with deterministic RNG for this frame
+    const rng = new SimpleRng(frame);
+    const originalRandom = Math.random;
+    Math.random = () => rng.nextF32();
 
     // Run all auto-registered systems
     world.runSystems(deltaTime);
 
-    // AI behavior system every 20 frames
-    if (frame % 20 === 0) {
-      const rng = new SimpleRng(frame);
-      const originalRandom = Math.random;
-      Math.random = () => rng.nextF32();
-      Math.random = originalRandom;
-    }
+    // Restore original Math.random
+    Math.random = originalRandom;
 
     const frameTime = performance.now() - frameStart;
     frameTimes.push(frameTime);
