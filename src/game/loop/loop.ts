@@ -148,6 +148,8 @@ type BaseEvents = [
         deltaTime: number;
         /**
          * Input snapshot at the start of the tick.
+         * 
+         * **Only available in client loops.**
          */
         input: ReturnType<InputManager['snapshot']>;
     }],
@@ -162,6 +164,8 @@ type BaseEvents = [
         deltaTime: number;
         /**
          * Input snapshot at the start of the tick.
+         * 
+         * **Only available in client loops.**
          */
         input: ReturnType<InputManager['snapshot']>;
     }],
@@ -176,6 +180,8 @@ type BaseEvents = [
         deltaTime: number;
         /**
          * Input snapshot at the start of the tick.
+         * 
+         * **Only available in client loops.**
          */
         input: ReturnType<InputManager['snapshot']>;
     }],
