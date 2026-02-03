@@ -37,8 +37,9 @@ export interface ServerNetworkConfig<TPeer extends TransportAdapter, TSnapshots>
  *
  * @remarks
  * **Client-Side Prediction Support:**
- * - Automatically tracks the last processed client tick for each peer
+ * - Tracks the last VALIDATED client tick for each peer (only intents passing validation update this)
  * - All intents include a 'tick' field (added by defineIntent())
+ * - Use validators in `onIntent()` to reject stale/invalid intents - rejected intents don't update the confirmed tick
  * - Use `getConfirmedClientTick(peerId)` to get the confirmed tick for snapshots
  * - Use `onAnyIntent()` to track which peers need snapshot responses
  *
@@ -63,14 +64,20 @@ export interface ServerNetworkConfig<TPeer extends TransportAdapter, TSnapshots>
  *   pendingResponses.add(peerId);
  * });
  *
- * // Type-safe intent handlers
- * server.onIntent<MoveIntent>(IntentKind.Move, (peerId, intent) => {
- *   intent.tick // ✅ Automatically included in all intents
- *   intent.dx // ✅ Correctly typed
+ * // Type-safe intent handlers with validation (prevents stale intents from updating confirmed tick)
+ * // The validator can use getConfirmedClientTick to reject out-of-order intents
+ * server.onIntent(Intents.Move, (peerId, intent) => {
+ *   // Process the intent
+ *   applyMovement(peerId, intent);
+ * }, (peerId, intent) => {
+ *   // Validator: reject out-of-order intents using the network layer's tracking
+ *   const lastTick = server.getConfirmedClientTick(peerId, intent.kind);
+ *   if (intent.tick <= lastTick) return false; // Rejected - confirmed tick NOT updated
+ *   return true; // Accepted - confirmed tick WILL be updated
  * });
  *
- * // Send snapshot with confirmed client tick (for client-side prediction)
- * const confirmedTick = server.getConfirmedClientTick(peerId);
+ * // Send snapshot with confirmed client tick for the relevant intent type (for client-side prediction)
+ * const confirmedTick = server.getConfirmedClientTick(peerId, Intents.Move.kind);
  * server.sendSnapshotToPeer(peerId, 'players', {
  *   tick: confirmedTick, // Client can reconcile based on this
  *   updates: { players: [...] }
@@ -90,8 +97,8 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	/** Per-peer snapshot registries - this is the key feature! */
 	private peerSnapshotRegistries = new Map<string, SnapshotRegistry<TSnapshots>>();
 
-	/** Track last processed client tick per peer (for client-side prediction) */
-	private lastProcessedClientTick = new Map<string, number>();
+	/** Track last processed client tick per peer per intent kind (for client-side prediction) */
+	private lastProcessedClientTick = new Map<string, Map<number, number>>();
 
 	/** Track last sent snapshot hashes per peer per type (for delta detection) */
 	private lastSnapshotHashes = new Map<string, Map<string, number>>();
@@ -151,8 +158,17 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	 * Register a handler for a specific intent kind (type-safe)
 	 * Supports multiple handlers per intent type
 	 * @template T The intent type for this handler
-	 * @param validator Optional validation function - if it returns false, intent is rejected
+	 * @param intent The intent definition
+	 * @param handler Callback invoked for valid intents
+	 * @param validator Optional validation function - if it returns false, intent is rejected and lastProcessedClientTick is NOT updated
 	 * @returns Unsubscribe function to remove this handler
+	 *
+	 * @remarks
+	 * **Important:** The validator controls tick confirmation for client-side prediction.
+	 * - If validator returns `true`: intent is processed AND lastProcessedClientTick is updated
+	 * - If validator returns `false`: intent is rejected AND lastProcessedClientTick is NOT updated
+	 *
+	 * This ensures only valid, non-stale intents update the confirmed client tick used for reconciliation.
 	 */
 	onIntent<T extends Intent>(
 		intent: DefinedIntent<T['kind'], T>,
@@ -173,6 +189,16 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 					return;
 				}
 			}
+
+			// Update lastProcessedClientTick AFTER validation passes
+			// This ensures only valid intents update the confirmed tick
+			let peerTicks = this.lastProcessedClientTick.get(peerId);
+			if (!peerTicks) {
+				peerTicks = new Map<number, number>();
+				this.lastProcessedClientTick.set(peerId, peerTicks);
+			}
+			peerTicks.set(intent.kind, intent.tick);
+
 			handler(peerId, intent as T);
 		};
 
@@ -776,33 +802,44 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 	}
 
 	/**
-	 * Get the last confirmed client tick for a peer.
+	 * Get the last confirmed (validated) client tick for a peer and intent kind.
 	 * Used for client-side prediction reconciliation.
 	 *
 	 * @param peerId The peer ID to query
-	 * @returns The last processed client tick number, or 0 if peer not found
+	 * @param intentKind The intent kind to query (different intent types have independent tick sequences)
+	 * @returns The last validated client tick number for this intent kind, or 0 if not found
 	 *
 	 * @remarks
-	 * This is automatically tracked when intents arrive, as all intents
-	 * include a 'tick' field (added by defineIntent).
+	 * This is automatically tracked when intents pass validation.
+	 * Only intents that pass the validator (if provided to onIntent) will update this value.
+	 * Each intent kind has its own tick sequence, allowing different types of intents
+	 * (e.g., Move, Shoot, Chat) to have independent tick tracking.
 	 */
-	getConfirmedClientTick(peerId: string): number {
-		return this.lastProcessedClientTick.get(peerId) ?? 0;
+	getConfirmedClientTick(peerId: string, intentKind: number): number {
+		const peerTicks = this.lastProcessedClientTick.get(peerId);
+		if (!peerTicks) return 0;
+		return peerTicks.get(intentKind) ?? 0;
 	}
 
 	/**
-	 * Set the confirmed client tick for a peer.
-	 * Rarely needed as this is automatically tracked by handleIntent.
+	 * Set the confirmed client tick for a peer and intent kind.
+	 * Rarely needed as this is automatically tracked when intents pass validation.
 	 *
 	 * @param peerId The peer ID
+	 * @param intentKind The intent kind
 	 * @param tick The client tick number to set
 	 *
 	 * @remarks
-	 * All intents automatically include a 'tick' field via defineIntent(),
-	 * so this is tracked automatically when intents are received.
+	 * This is automatically updated when intents pass validation in onIntent handlers.
+	 * Manual use of this method is rarely needed.
 	 */
-	setConfirmedClientTick(peerId: string, tick: number): void {
-		this.lastProcessedClientTick.set(peerId, tick);
+	setConfirmedClientTick(peerId: string, intentKind: number, tick: number): void {
+		let peerTicks = this.lastProcessedClientTick.get(peerId);
+		if (!peerTicks) {
+			peerTicks = new Map<number, number>();
+			this.lastProcessedClientTick.set(peerId, peerTicks);
+		}
+		peerTicks.set(intentKind, tick);
 	}
 
 	/**
@@ -902,8 +939,9 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 		const snapshotRegistry = this.createPeerSnapshotRegistry();
 		this.peerSnapshotRegistries.set(peerId, snapshotRegistry);
 
-		// Initialize client tick tracking (for client-side prediction)
-		this.lastProcessedClientTick.set(peerId, 0);
+		// Initialize client tick tracking map (for client-side prediction)
+		// Each intent kind will be tracked independently as intents arrive
+		this.lastProcessedClientTick.set(peerId, new Map<number, number>());
 
 		// Setup message handler for this peer
 		peer.onMessage((data) => {
@@ -1002,10 +1040,6 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 
 			this.log(`Received intent (kind: ${intent.kind}) from peer ${peerId}`);
 
-			// Automatically track client tick for client-side prediction
-			// All intents have a 'tick' field added by defineIntent()
-			this.lastProcessedClientTick.set(peerId, intent.tick);
-
 			// Call global intent handlers first (e.g., for tracking pending responses)
 			for (const handler of this.anyIntentHandlers) {
 				try {
@@ -1018,6 +1052,8 @@ export class ServerNetwork<TPeer extends TransportAdapter = TransportAdapter, TS
 			const handlers = this.intentHandlers.get(intent.kind);
 			if (handlers && handlers.length > 0) {
 				// Call all registered handlers
+				// Note: lastProcessedClientTick is now updated inside the wrapped handler
+				// after validation passes (see onIntent method)
 				for (const handler of handlers) {
 					try {
 						handler(peerId, intent);
