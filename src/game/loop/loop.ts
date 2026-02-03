@@ -1,4 +1,5 @@
 import { createDriver, DriverType, EventSystem, FixedTicker, LoopDriver } from "../../core";
+import { InputManager, BrowserInputSource } from "../../core/input";
 
 /**
  * GameLoop class that manages the main game loop with tick events and optional rendering.
@@ -6,6 +7,8 @@ import { createDriver, DriverType, EventSystem, FixedTicker, LoopDriver } from "
  */
 export class GameLoop<T extends DriverType = DriverType> {
     private driver: LoopDriver;
+    private input: InputManager;
+
     /**
      * FixedTicker instance that handles tick timing and updates.
      */
@@ -34,6 +37,8 @@ export class GameLoop<T extends DriverType = DriverType> {
             eventNames.push('render');
         }
 
+        this.input = new InputManager();
+
         this.events = new EventSystem({
             events: eventNames,
         }) as T extends 'client' ? EventSystem<ClientEvents> : EventSystem<ServerEvents>;
@@ -41,10 +46,12 @@ export class GameLoop<T extends DriverType = DriverType> {
         this.ticker = new FixedTicker({
             rate: this.options.tickRate,
             onTick: (dt, tick = 0) => {
-                this.events.emit('pre-tick', { deltaTime: dt, tick });
-                this.options.onTick?.(dt, tick);
-                this.events.emit('tick', { deltaTime: dt, tick });
-                this.events.emit('post-tick', { deltaTime: dt, tick });
+                const input = this.input.snapshot();
+
+                this.events.emit('pre-tick', { deltaTime: dt, tick, input });
+                this.options.onTick?.(dt, tick, input);
+                this.events.emit('tick', { deltaTime: dt, tick, input });
+                this.events.emit('post-tick', { deltaTime: dt, tick, input });
             },
             onTickSkipped: (skippedTicks) => {
                 this.events.emit('skip', { ticks: skippedTicks });
@@ -56,10 +63,11 @@ export class GameLoop<T extends DriverType = DriverType> {
             this.fps = 1 / dt;
 
             if (this.options.type === 'client') {
-                this.options.onRender?.(dt, this.ticker.alpha);
+                this.options.onRender?.(dt, this.ticker.alpha, this.input.peek());
                 this.events.emit('render', {
                     deltaTime: dt,
                     alpha: this.ticker.alpha,
+                    input: this.input.peek(),
                 });
             }
         });
@@ -95,6 +103,11 @@ export class GameLoop<T extends DriverType = DriverType> {
     start() {
         this.driver.start();
         this.events.emit('start', { startedAt: Date.now() });
+
+        if (this.options.type === 'client') {
+            const source = new BrowserInputSource(document, document.body);
+            this.input.listen(source);
+        }
     }
 
     /**
@@ -103,14 +116,18 @@ export class GameLoop<T extends DriverType = DriverType> {
     stop() {
         this.driver.stop();
         this.events.emit('stop', { stoppedAt: Date.now() });
+
+        if (this.options.type === 'client') {
+            this.input.unlisten();
+        }
     }
 }
 
 interface GameLoopOptions {
     tickRate: number;
     type: DriverType;
-    onTick?: (dt: number, tick: number) => void;
-    onRender?: (dt: number, alpha: number) => void;
+    onTick?: (dt: number, tick: number, input: ReturnType<InputManager['snapshot']>) => void;
+    onRender?: (dt: number, alpha: number, input: ReturnType<InputManager['snapshot']>) => void;
 }
 
 type BaseEvents = [
@@ -129,6 +146,10 @@ type BaseEvents = [
          * Delta time since the last tick.
          */
         deltaTime: number;
+        /**
+         * Input snapshot at the start of the tick.
+         */
+        input: ReturnType<InputManager['snapshot']>;
     }],
     ['tick', {
         /**
@@ -139,6 +160,10 @@ type BaseEvents = [
          * Delta time since the last tick.
          */
         deltaTime: number;
+        /**
+         * Input snapshot at the start of the tick.
+         */
+        input: ReturnType<InputManager['snapshot']>;
     }],
     ['post-tick', {
         /**
@@ -149,6 +174,10 @@ type BaseEvents = [
          * Delta time since the last tick.
          */
         deltaTime: number;
+        /**
+         * Input snapshot at the start of the tick.
+         */
+        input: ReturnType<InputManager['snapshot']>;
     }],
     ['skip', {
         /**
@@ -180,7 +209,11 @@ type BaseEvents = [
 
 type ClientEvents = [
     ...BaseEvents,
-    ['render', { deltaTime: number, alpha: number; }],
+    ['render', {
+        deltaTime: number,
+        alpha: number;
+        input: ReturnType<InputManager['snapshot']>;
+    }],
 ];
 
 type ServerEvents = BaseEvents;
