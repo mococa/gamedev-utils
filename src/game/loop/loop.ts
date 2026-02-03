@@ -6,8 +6,8 @@ import { InputManager, BrowserInputSource } from "../../core/input";
  * It supports both client and server types, emitting appropriate events for both.
  */
 export class GameLoop<T extends DriverType = DriverType> {
-    private driver: LoopDriver;
-    private input: InputManager;
+    private _driver: LoopDriver;
+    private _input: InputManager;
 
     /**
      * FixedTicker instance that handles tick timing and updates.
@@ -37,7 +37,7 @@ export class GameLoop<T extends DriverType = DriverType> {
             eventNames.push('render');
         }
 
-        this.input = new InputManager();
+        this._input = new InputManager();
 
         this.events = new EventSystem({
             events: eventNames,
@@ -46,7 +46,7 @@ export class GameLoop<T extends DriverType = DriverType> {
         this.ticker = new FixedTicker({
             rate: this.options.tickRate,
             onTick: (dt, tick = 0) => {
-                const input = this.input.snapshot();
+                const input = this._input.snapshot();
 
                 this.events.emit('pre-tick', { deltaTime: dt, tick, input });
                 this.options.onTick?.(dt, tick, input);
@@ -58,16 +58,16 @@ export class GameLoop<T extends DriverType = DriverType> {
             },
         });
 
-        this.driver = createDriver(this.options.type as T, (dt: number) => {
+        this._driver = createDriver(this.options.type as T, (dt: number) => {
             this.ticker.tick(dt);
             this.fps = 1 / dt;
 
             if (this.options.type === 'client') {
-                this.options.onRender?.(dt, this.ticker.alpha, this.input.peek());
+                this.options.onRender?.(dt, this.ticker.alpha, this._input.peek());
                 this.events.emit('render', {
                     deltaTime: dt,
                     alpha: this.ticker.alpha,
-                    input: this.input.peek(),
+                    input: this._input.peek(),
                 });
             }
         });
@@ -77,7 +77,7 @@ export class GameLoop<T extends DriverType = DriverType> {
      * Pauses the game ticker and emits a 'toggle-pause' event.
      */
     pause() {
-        this.driver.stop();
+        this._driver.stop();
         this.events.emit('toggle-pause', {
             paused: true,
             lastToggledAt: Date.now(),
@@ -89,7 +89,7 @@ export class GameLoop<T extends DriverType = DriverType> {
      * Resumes the game ticker and emits a 'toggle-pause' event.
      */
     resume() {
-        this.driver.start();
+        this._driver.start();
         this.events.emit('toggle-pause', {
             paused: false,
             lastToggledAt: Date.now(),
@@ -101,12 +101,12 @@ export class GameLoop<T extends DriverType = DriverType> {
      * Starts the game ticker and emits a 'start' event.
      */
     start() {
-        this.driver.start();
+        this._driver.start();
         this.events.emit('start', { startedAt: Date.now() });
 
         if (this.options.type === 'client') {
             const source = new BrowserInputSource(document, document.body);
-            this.input.listen(source);
+            this._input.listen(source);
         }
     }
 
@@ -114,11 +114,11 @@ export class GameLoop<T extends DriverType = DriverType> {
      * Stops the game ticker and emits a 'stop' event.
      */
     stop() {
-        this.driver.stop();
+        this._driver.stop();
         this.events.emit('stop', { stoppedAt: Date.now() });
 
         if (this.options.type === 'client') {
-            this.input.unlisten();
+            this._input.unlisten();
         }
     }
 }
